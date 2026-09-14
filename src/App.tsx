@@ -25,6 +25,7 @@ const AppContent: React.FC = () => {
 
   // Navigation tab
   const [currentTab, setCurrentTab] = useState<NavTab>('items');
+  const [bypassAuth, setBypassAuth] = useState<boolean>(false);
 
   // Modals state
   const [showAddModal, setShowAddModal] = useState<boolean>(false);
@@ -153,11 +154,11 @@ const AppContent: React.FC = () => {
       )}
 
       {/* 6. Security Gates: Supabase Auth Modal & Household PIN Gate */}
-      {isCloudConfigured && !session && (
-        <AuthModal />
+      {isCloudConfigured && !session && !bypassAuth && (
+        <AuthModal onBypass={() => setBypassAuth(true)} />
       )}
 
-      {(!isCloudConfigured || session) && !isPinUnlocked && (
+      {(!isCloudConfigured || session || bypassAuth) && !isPinUnlocked && (
         <HouseholdPinModal
           correctPin={household?.security_pin || '884488'}
           onSuccess={unlockPin}

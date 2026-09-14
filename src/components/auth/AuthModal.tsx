@@ -17,9 +17,10 @@ import {
 
 interface AuthModalProps {
   onSuccess?: () => void;
+  onBypass?: () => void;
 }
 
-export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
+export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess, onBypass }) => {
   const [authMode, setAuthMode] = useState<'magic_link' | 'password'>('magic_link');
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
@@ -234,6 +235,19 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onSuccess }) => {
               <AlertCircle size={16} className="shrink-0 text-red-600 mt-0.5" />
             )}
             <span className="leading-relaxed">{message.text}</span>
+          </div>
+        )}
+
+        {/* Offline / Bomb Shelter Bypass */}
+        {onBypass && (
+          <div className="pt-2 text-center border-t border-slate-100">
+            <button
+              type="button"
+              onClick={onBypass}
+              className="text-[11px] text-slate-500 hover:text-slate-700 underline font-medium"
+            >
+              Continue in Bomb Shelter Mode (Offline Inventory)
+            </button>
           </div>
         )}
       </div>

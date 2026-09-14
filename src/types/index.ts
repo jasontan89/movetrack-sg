@@ -65,6 +65,7 @@ export interface Item {
   box_id?: string | null;
   carousell_details?: CarousellDetails;
   notes?: string;
+  ai_generated_fields?: string[];
   created_at: string;
   updated_at: string;
   synced?: boolean;

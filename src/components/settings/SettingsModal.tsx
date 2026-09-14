@@ -17,6 +17,7 @@ import {
   Check,
   AlertTriangle,
   Home,
+  Sparkles,
 } from 'lucide-react';
 
 interface SettingsModalProps {
@@ -30,6 +31,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
   const creds = getSupabaseCredentials();
   const [supabaseUrl, setSupabaseUrl] = useState(creds.url);
   const [supabaseAnonKey, setSupabaseAnonKey] = useState(creds.anonKey);
+  const [geminiApiKey, setGeminiApiKey] = useState<string>(
+    () => localStorage.getItem('movetrack_gemini_api_key') || ''
+  );
   const [saveStatus, setSaveStatus] = useState<string>('');
   const [copiedSchema, setCopiedSchema] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
@@ -62,6 +66,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
       setSaveStatus('Household details & PIN updated!');
       setTimeout(() => setSaveStatus(''), 2500);
     }
+  };
+
+  const handleSaveGeminiKey = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (geminiApiKey.trim()) {
+      localStorage.setItem('movetrack_gemini_api_key', geminiApiKey.trim());
+      setSaveStatus('Gemini API key saved!');
+    } else {
+      localStorage.removeItem('movetrack_gemini_api_key');
+      setSaveStatus('Gemini API key cleared.');
+    }
+    setTimeout(() => setSaveStatus(''), 2500);
   };
 
   const handleExportJson = () => {
@@ -225,6 +241,41 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
             {saveStatus && (
               <p className="text-emerald-700 font-semibold text-[11px]">{saveStatus}</p>
             )}
+          </form>
+
+          {/* Google Gemini AI Configuration */}
+          <form onSubmit={handleSaveGeminiKey} className="space-y-2.5">
+            <span className="font-bold text-slate-800 flex items-center gap-1.5">
+              <Sparkles size={14} className="text-purple-600" />
+              <span>Google Gemini AI (Photo Auto-Fill)</span>
+            </span>
+            <p className="text-[11px] text-slate-500 leading-relaxed">
+              Uses <strong>gemini-3.5-flash-lite</strong> (with fallback to <strong>gemini-3.1-flash-lite</strong>) to automatically detect dimensions, weight, fragility, and moving decisions when photos are captured.
+            </p>
+
+            <div className="space-y-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
+              <div>
+                <label className="text-[10px] text-slate-500 block mb-0.5">
+                  Gemini API Key (Optionally baked in .env as VITE_GEMINI_API_KEY)
+                </label>
+                <input
+                  type="password"
+                  value={geminiApiKey}
+                  onChange={(e) => setGeminiApiKey(e.target.value)}
+                  placeholder="AIzaSy..."
+                  className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-mono"
+                />
+              </div>
+
+              <div className="flex items-center justify-end pt-1">
+                <button
+                  type="submit"
+                  className="px-3 py-1.5 bg-purple-600 text-white rounded-lg font-bold hover:bg-purple-700 transition text-xs shadow-sm"
+                >
+                  Save Gemini Key
+                </button>
+              </div>
+            </div>
           </form>
 
           {/* Data Backup & Reset */}

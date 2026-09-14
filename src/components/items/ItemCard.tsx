@@ -161,6 +161,14 @@ export const ItemCard: React.FC<ItemCardProps> = ({ item, boxes, onClick }) => {
                 {formatRoomName(item.room)}
               </span>
 
+              {/* AI Scanned badge */}
+              {item.ai_generated_fields && item.ai_generated_fields.length > 0 && (
+                <span className="text-[10px] font-semibold text-purple-700 bg-purple-50 border border-purple-200 px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
+                  <Sparkles size={9} className="text-purple-600" />
+                  AI Scanned
+                </span>
+              )}
+
               {/* Box assignment */}
               {assignedBox ? (
                 <span className="text-[10px] font-medium text-teal-700 bg-teal-50 border border-teal-200 px-1.5 py-0.5 rounded">

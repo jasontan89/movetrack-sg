@@ -14,6 +14,7 @@ import {
   ExternalLink,
   CheckCircle2,
   Calendar,
+  Sparkles,
 } from 'lucide-react';
 
 interface ItemDetailModalProps {
@@ -33,6 +34,18 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const assignedBox = boxes.find((b) => b.id === item.box_id);
   const decision = getDecisionBadge(item.decision_status, item.carousell_details?.asking_price);
+
+  const hasAiField = (field: string) => Boolean(item.ai_generated_fields?.includes(field));
+
+  const renderAiPill = (field: string) => {
+    if (!hasAiField(field)) return null;
+    return (
+      <span className="inline-flex items-center gap-0.5 text-[9px] font-semibold bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-full border border-purple-200">
+        <Sparkles size={9} className="text-purple-600" />
+        AI generated
+      </span>
+    );
+  };
 
   const ownerColor =
     item.owner === 'jason'
@@ -101,6 +114,12 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({
               <span className="text-[10px] font-semibold bg-white/20 text-white backdrop-blur-md px-2 py-0.5 rounded-full">
                 {formatRoomName(item.room)}
               </span>
+              {hasAiField('name') && (
+                <span className="text-[10px] font-semibold bg-purple-600/90 text-white backdrop-blur-md px-2 py-0.5 rounded-full flex items-center gap-1">
+                  <Sparkles size={10} />
+                  AI title
+                </span>
+              )}
               {item.is_fragile && (
                 <span className="text-[10px] font-bold bg-red-600 text-white px-2 py-0.5 rounded-full flex items-center gap-1">
                   <AlertTriangle size={10} />
@@ -117,12 +136,28 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({
 
         {/* Modal Scrollable Body */}
         <div className="flex-1 overflow-y-auto p-5 space-y-4 text-slate-800">
+          {/* AI Banner Notice if any field is still AI generated */}
+          {item.ai_generated_fields && item.ai_generated_fields.length > 0 && (
+            <div className="bg-purple-50 border border-purple-200 rounded-2xl p-3 flex items-start gap-2.5 text-xs text-purple-900 animate-in fade-in">
+              <Sparkles size={16} className="text-purple-600 shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <span className="font-bold block">Contains Gemini Flash Lite AI Estimates</span>
+                <span className="text-[11px] text-purple-700">
+                  Fields marked with <span className="font-semibold text-purple-900">"AI generated"</span> were auto-filled by AI. Tap the Edit button above to review or amend them anytime.
+                </span>
+              </div>
+            </div>
+          )}
+
           {/* Current Decision Status Banner */}
           <div className={`p-3.5 rounded-2xl border flex items-center justify-between ${decision.bg}`}>
             <div className="flex items-center gap-2">
               <span className="text-lg">{decision.icon}</span>
               <div>
-                <div className="font-bold text-xs">Decision: {decision.label}</div>
+                <div className="font-bold text-xs flex items-center gap-1.5">
+                  <span>Decision: {decision.label}</span>
+                  {renderAiPill('decision_status')}
+                </div>
                 <div className="text-[11px] opacity-80">
                   {item.decision_status === 'keep_pack' && 'Will be transported to new flat'}
                   {item.decision_status === 'sell_carousell' &&
@@ -182,14 +217,20 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({
             </span>
             <div className="grid grid-cols-3 gap-3 text-center">
               <div className="bg-white p-2 rounded-xl border border-slate-200/80">
-                <span className="text-[10px] text-slate-400 block font-medium">Dimensions</span>
+                <div className="flex items-center justify-center gap-1">
+                  <span className="text-[10px] text-slate-400 block font-medium">Dimensions</span>
+                  {renderAiPill('dimensions_cm')}
+                </div>
                 <span className="text-xs font-bold text-slate-800">
                   {item.dimensions_cm?.length || 0}×{item.dimensions_cm?.width || 0}×
                   {item.dimensions_cm?.height || 0} cm
                 </span>
               </div>
               <div className="bg-white p-2 rounded-xl border border-slate-200/80">
-                <span className="text-[10px] text-slate-400 block font-medium">Gross Weight</span>
+                <div className="flex items-center justify-center gap-1">
+                  <span className="text-[10px] text-slate-400 block font-medium">Gross Weight</span>
+                  {renderAiPill('weight_kg')}
+                </div>
                 <span className="text-xs font-bold text-slate-800">
                   ~{item.weight_kg || 0} kg
                 </span>
@@ -204,28 +245,34 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({
 
             {/* Checklist tags */}
             <div className="grid grid-cols-2 gap-2 text-xs pt-1">
-              <div className="flex items-center gap-2 bg-white p-2 rounded-xl border border-slate-200/80">
-                <AlertTriangle
-                  size={14}
-                  className={item.is_fragile ? 'text-red-600' : 'text-slate-300'}
-                />
-                <span className={item.is_fragile ? 'font-semibold text-slate-800' : 'text-slate-400'}>
-                  {item.is_fragile ? 'Fragile Item' : 'Not Fragile'}
-                </span>
+              <div className="flex items-center justify-between bg-white p-2 rounded-xl border border-slate-200/80">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle
+                    size={14}
+                    className={item.is_fragile ? 'text-red-600' : 'text-slate-300'}
+                  />
+                  <span className={item.is_fragile ? 'font-semibold text-slate-800' : 'text-slate-400'}>
+                    {item.is_fragile ? 'Fragile Item' : 'Not Fragile'}
+                  </span>
+                </div>
+                {renderAiPill('is_fragile')}
               </div>
 
-              <div className="flex items-center gap-2 bg-white p-2 rounded-xl border border-slate-200/80">
-                <Wrench
-                  size={14}
-                  className={item.disassembly_required ? 'text-amber-600' : 'text-slate-300'}
-                />
-                <span
-                  className={
-                    item.disassembly_required ? 'font-semibold text-slate-800' : 'text-slate-400'
-                  }
-                >
-                  {item.disassembly_required ? 'Needs Disassembly' : 'No Disassembly'}
-                </span>
+              <div className="flex items-center justify-between bg-white p-2 rounded-xl border border-slate-200/80">
+                <div className="flex items-center gap-2">
+                  <Wrench
+                    size={14}
+                    className={item.disassembly_required ? 'text-amber-600' : 'text-slate-300'}
+                  />
+                  <span
+                    className={
+                      item.disassembly_required ? 'font-semibold text-slate-800' : 'text-slate-400'
+                    }
+                  >
+                    {item.disassembly_required ? 'Needs Disassembly' : 'No Disassembly'}
+                  </span>
+                </div>
+                {renderAiPill('disassembly_required')}
               </div>
 
               <div className="flex items-center gap-2 bg-white p-2 rounded-xl border border-slate-200/80">
@@ -294,7 +341,10 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({
                 Carousell Listing Details
               </span>
               <div className="flex items-center justify-between text-xs">
-                <span>Asking Price:</span>
+                <div className="flex items-center gap-1">
+                  <span>Asking Price:</span>
+                  {renderAiPill('carousell_price')}
+                </div>
                 <strong className="text-orange-900 text-sm">
                   ${item.carousell_details.asking_price || 0} SGD
                 </strong>
@@ -322,7 +372,10 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({
           {/* Notes */}
           {item.notes && (
             <div className="space-y-1">
-              <span className="text-xs font-bold text-slate-700 block">Notes & Handling</span>
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-700 block">Notes & Handling</span>
+                {renderAiPill('notes')}
+              </div>
               <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs text-slate-700 leading-relaxed">
                 {item.notes}
               </div>

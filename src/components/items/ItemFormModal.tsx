@@ -5,6 +5,7 @@ import { Box, Category, DecisionStatus, Item, Owner, Room } from '../../types';
 import { ITEM_PRESETS, ItemPreset } from '../../utils/presetItems';
 import { compressPhoto } from '../../utils/imageCompressor';
 import { calculateCbm } from '../../utils/cbmCalculator';
+import { analyzeEquipmentPhoto } from '../../services/geminiService';
 import {
   X,
   Camera,
@@ -18,6 +19,7 @@ import {
   Loader2,
   Trash2,
   Plus,
+  Check,
 } from 'lucide-react';
 
 interface ItemFormModalProps {
@@ -83,6 +85,33 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
   );
   const [notes, setNotes] = useState<string>(initialItem?.notes || '');
 
+  // AI Auto-Fill State
+  const [isAnalyzingAi, setIsAnalyzingAi] = useState(false);
+  const [aiError, setAiError] = useState('');
+  const [aiSuccessMessage, setAiSuccessMessage] = useState('');
+  const [aiFields, setAiFields] = useState<Set<string>>(
+    () => new Set(initialItem?.ai_generated_fields || [])
+  );
+
+  const markFieldAmended = (fieldKey: string) => {
+    setAiFields((prev) => {
+      if (!prev.has(fieldKey)) return prev;
+      const next = new Set(prev);
+      next.delete(fieldKey);
+      return next;
+    });
+  };
+
+  const renderAiBadge = (fieldKey: string) => {
+    if (!aiFields.has(fieldKey)) return null;
+    return (
+      <span className="inline-flex items-center gap-1 text-[10px] font-semibold bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full border border-purple-200 animate-in fade-in">
+        <Sparkles size={10} className="text-purple-600" />
+        AI generated
+      </span>
+    );
+  };
+
   // Image upload handling
   const [isCompressing, setIsCompressing] = useState(false);
   const [compressionInfo, setCompressionInfo] = useState<string>('');
@@ -105,6 +134,52 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
     setHasCables(preset.has_cables_accessories);
     if (preset.default_price) {
       setCarousellPrice(String(preset.default_price));
+    }
+    // Presets are manually applied by user, so clear AI flags
+    setAiFields(new Set());
+  };
+
+  const handleRunAi = async () => {
+    if (!photoUrl) return;
+    if (!navigator.onLine) {
+      setAiError(
+        'You are currently offline (Bomb Shelter mode). Connect to the internet to run Gemini AI analysis.'
+      );
+      return;
+    }
+
+    setIsAnalyzingAi(true);
+    setAiError('');
+    setAiSuccessMessage('');
+
+    try {
+      const result = await analyzeEquipmentPhoto(photoUrl);
+      setName(result.name);
+      setCategory(result.category);
+      setRoom(result.room);
+      setLength(String(result.dimensions_cm.length));
+      setWidth(String(result.dimensions_cm.width));
+      setHeight(String(result.dimensions_cm.height));
+      setWeight(String(result.weight_kg));
+      setIsFragile(result.is_fragile);
+      setNeedsDisassembly(result.disassembly_required);
+      setDecision(result.decision_status);
+      if (result.carousell_asking_price) {
+        setCarousellPrice(String(result.carousell_asking_price));
+      }
+      if (result.notes) {
+        setNotes(result.notes);
+      }
+
+      setAiFields(new Set(result.extractedFields));
+      setAiSuccessMessage(
+        `✨ Auto-filled via ${result.modelUsed}! Look for the "AI generated" badges.`
+      );
+    } catch (err: any) {
+      console.error('AI extraction error:', err);
+      setAiError(err.message || 'Failed to auto-fill with Gemini. Please try again.');
+    } finally {
+      setIsAnalyzingAi(false);
     }
   };
 
@@ -171,6 +246,7 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
               }
             : undefined,
         notes: notes.trim(),
+        ai_generated_fields: Array.from(aiFields),
       };
 
       if (initialItem) {
@@ -319,18 +395,66 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
                 )}
               </div>
             </div>
+
+            {/* Gemini Flash Lite Auto-Fill Action */}
+            {photoUrl && (
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={handleRunAi}
+                  disabled={isAnalyzingAi || isCompressing}
+                  className={`w-full py-2.5 px-3.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 shadow-md transition-all ${
+                    isAnalyzingAi
+                      ? 'bg-purple-100 text-purple-700 border border-purple-300 cursor-wait'
+                      : 'bg-gradient-to-r from-purple-600 via-indigo-600 to-teal-600 text-white hover:brightness-110 active:scale-[0.98]'
+                  }`}
+                >
+                  {isAnalyzingAi ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin text-purple-700" />
+                      <span>Analyzing Equipment with Gemini Flash Lite...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles size={16} className="text-amber-300 animate-pulse" />
+                      <span>✨ Auto-fill with Gemini Flash Lite</span>
+                    </>
+                  )}
+                </button>
+
+                {aiSuccessMessage && (
+                  <div className="mt-2 p-2.5 bg-purple-50 border border-purple-200 rounded-xl text-[11px] text-purple-900 font-medium flex items-center gap-2 animate-in fade-in">
+                    <Check size={14} className="text-purple-600 shrink-0" />
+                    <span>{aiSuccessMessage}</span>
+                  </div>
+                )}
+
+                {aiError && (
+                  <div className="mt-2 p-2.5 bg-red-50 border border-red-200 rounded-xl text-[11px] text-red-700 font-medium flex items-start gap-2 animate-in fade-in">
+                    <AlertTriangle size={14} className="text-red-600 shrink-0 mt-0.5" />
+                    <span>{aiError}</span>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Name / Title */}
           <div className="space-y-1">
-            <label className="text-xs font-semibold text-slate-700 block">
-              Item Name / Equipment Title *
-            </label>
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-semibold text-slate-700 block">
+                Item Name / Equipment Title *
+              </label>
+              {renderAiBadge('name')}
+            </div>
             <input
               type="text"
               required
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => {
+                setName(e.target.value);
+                markFieldAmended('name');
+              }}
               placeholder="e.g. LG 55 OLED TV, Dell 34 Monitor, Makita Drill..."
               className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 shadow-sm"
             />
@@ -381,12 +505,18 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
           {/* Room and Category Grid */}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <label className="text-xs font-semibold text-slate-700 block">
-                Current Room / Zone
-              </label>
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-slate-700 block">
+                  Current Room / Zone
+                </label>
+                {renderAiBadge('room')}
+              </div>
               <select
                 value={room}
-                onChange={(e) => setRoom(e.target.value as Room)}
+                onChange={(e) => {
+                  setRoom(e.target.value as Room);
+                  markFieldAmended('room');
+                }}
                 className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-teal-500 shadow-sm"
               >
                 <option value="living_room">Living Room</option>
@@ -401,10 +531,16 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
             </div>
 
             <div className="space-y-1">
-              <label className="text-xs font-semibold text-slate-700 block">Category</label>
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-slate-700 block">Category</label>
+                {renderAiBadge('category')}
+              </div>
               <select
                 value={category}
-                onChange={(e) => setCategory(e.target.value as Category)}
+                onChange={(e) => {
+                  setCategory(e.target.value as Category);
+                  markFieldAmended('category');
+                }}
                 className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-teal-500 shadow-sm"
               >
                 <option value="electronics_av">Electronics & AV</option>
@@ -423,13 +559,19 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
 
           {/* Decision Status (Singapore Moving Lifecycle) */}
           <div className="space-y-1.5 bg-slate-50 p-3 rounded-2xl border border-slate-200">
-            <label className="text-xs font-bold text-slate-800 block">
-              Moving Decision Status
-            </label>
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-slate-800 block">
+                Moving Decision Status
+              </label>
+              {renderAiBadge('decision_status')}
+            </div>
             <div className="grid grid-cols-2 gap-2 text-xs">
               <button
                 type="button"
-                onClick={() => setDecision('keep_pack')}
+                onClick={() => {
+                  setDecision('keep_pack');
+                  markFieldAmended('decision_status');
+                }}
                 className={`p-2 rounded-xl border text-left flex items-center gap-2 transition ${
                   decision === 'keep_pack'
                     ? 'bg-emerald-600 text-white border-emerald-600 font-bold shadow-sm'
@@ -447,7 +589,10 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
 
               <button
                 type="button"
-                onClick={() => setDecision('sell_carousell')}
+                onClick={() => {
+                  setDecision('sell_carousell');
+                  markFieldAmended('decision_status');
+                }}
                 className={`p-2 rounded-xl border text-left flex items-center gap-2 transition ${
                   decision === 'sell_carousell'
                     ? 'bg-orange-500 text-white border-orange-500 font-bold shadow-sm'
@@ -465,7 +610,10 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
 
               <button
                 type="button"
-                onClick={() => setDecision('donate_bless')}
+                onClick={() => {
+                  setDecision('donate_bless');
+                  markFieldAmended('decision_status');
+                }}
                 className={`p-2 rounded-xl border text-left flex items-center gap-2 transition ${
                   decision === 'donate_bless'
                     ? 'bg-purple-600 text-white border-purple-600 font-bold shadow-sm'
@@ -483,7 +631,10 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
 
               <button
                 type="button"
-                onClick={() => setDecision('hdb_bulky_disposal')}
+                onClick={() => {
+                  setDecision('hdb_bulky_disposal');
+                  markFieldAmended('decision_status');
+                }}
                 className={`p-2 rounded-xl border text-left flex items-center gap-2 transition ${
                   decision === 'hdb_bulky_disposal'
                     ? 'bg-sky-600 text-white border-sky-600 font-bold shadow-sm'
@@ -501,7 +652,10 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
 
               <button
                 type="button"
-                onClick={() => setDecision('alba_ewaste')}
+                onClick={() => {
+                  setDecision('alba_ewaste');
+                  markFieldAmended('decision_status');
+                }}
                 className={`p-2 rounded-xl border text-left flex items-center gap-2 transition ${
                   decision === 'alba_ewaste'
                     ? 'bg-amber-600 text-white border-amber-600 font-bold shadow-sm'
@@ -519,7 +673,10 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
 
               <button
                 type="button"
-                onClick={() => setDecision('undecided_discuss')}
+                onClick={() => {
+                  setDecision('undecided_discuss');
+                  markFieldAmended('decision_status');
+                }}
                 className={`p-2 rounded-xl border text-left flex items-center gap-2 transition ${
                   decision === 'undecided_discuss'
                     ? 'bg-yellow-500 text-white border-yellow-500 font-bold shadow-sm'
@@ -540,9 +697,12 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
             {decision === 'sell_carousell' && (
               <div className="mt-3 pt-3 border-t border-slate-200 grid grid-cols-2 gap-2">
                 <div>
-                  <label className="text-[11px] font-semibold text-slate-600 block">
-                    Asking Price (SGD)
-                  </label>
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] font-semibold text-slate-600 block">
+                      Asking Price (SGD)
+                    </label>
+                    {renderAiBadge('carousell_price')}
+                  </div>
                   <div className="relative mt-1">
                     <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs">
                       $
@@ -550,7 +710,10 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
                     <input
                       type="number"
                       value={carousellPrice}
-                      onChange={(e) => setCarousellPrice(e.target.value)}
+                      onChange={(e) => {
+                        setCarousellPrice(e.target.value);
+                        markFieldAmended('carousell_price');
+                      }}
                       placeholder="e.g. 150"
                       className="w-full pl-6 pr-2 py-1.5 bg-white border border-slate-200 rounded-lg text-xs"
                     />
@@ -577,9 +740,13 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
           {/* Physical Dimensions & Weight */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <label className="text-xs font-semibold text-slate-700">
-                Dimensions & Weight (For Mover CBM)
-              </label>
+              <div className="flex items-center gap-1.5">
+                <label className="text-xs font-semibold text-slate-700">
+                  Dimensions & Weight (For Mover CBM)
+                </label>
+                {renderAiBadge('dimensions_cm')}
+                {renderAiBadge('weight_kg')}
+              </div>
               {currentCbm > 0 && (
                 <span className="text-xs font-bold text-teal-700 bg-teal-50 px-2 py-0.5 rounded border border-teal-200">
                   Volume: {currentCbm} CBM (m³)
@@ -593,7 +760,10 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
                 <input
                   type="number"
                   value={length}
-                  onChange={(e) => setLength(e.target.value)}
+                  onChange={(e) => {
+                    setLength(e.target.value);
+                    markFieldAmended('dimensions_cm');
+                  }}
                   placeholder="L"
                   className="w-full px-2 py-2 bg-white border border-slate-200 rounded-xl text-xs text-center font-medium"
                 />
@@ -603,7 +773,10 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
                 <input
                   type="number"
                   value={width}
-                  onChange={(e) => setWidth(e.target.value)}
+                  onChange={(e) => {
+                    setWidth(e.target.value);
+                    markFieldAmended('dimensions_cm');
+                  }}
                   placeholder="W"
                   className="w-full px-2 py-2 bg-white border border-slate-200 rounded-xl text-xs text-center font-medium"
                 />
@@ -613,7 +786,10 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
                 <input
                   type="number"
                   value={height}
-                  onChange={(e) => setHeight(e.target.value)}
+                  onChange={(e) => {
+                    setHeight(e.target.value);
+                    markFieldAmended('dimensions_cm');
+                  }}
                   placeholder="H"
                   className="w-full px-2 py-2 bg-white border border-slate-200 rounded-xl text-xs text-center font-medium"
                 />
@@ -624,7 +800,10 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
                   type="number"
                   step="0.1"
                   value={weight}
-                  onChange={(e) => setWeight(e.target.value)}
+                  onChange={(e) => {
+                    setWeight(e.target.value);
+                    markFieldAmended('weight_kg');
+                  }}
                   placeholder="kg"
                   className="w-full px-2 py-2 bg-white border border-slate-200 rounded-xl text-xs text-center font-medium"
                 />
@@ -636,34 +815,46 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
           <div className="grid grid-cols-2 gap-2 text-xs">
             <button
               type="button"
-              onClick={() => setIsFragile(!isFragile)}
-              className={`p-2.5 rounded-xl border flex items-center gap-2 transition text-left ${
+              onClick={() => {
+                setIsFragile(!isFragile);
+                markFieldAmended('is_fragile');
+              }}
+              className={`p-2.5 rounded-xl border flex items-center justify-between transition text-left ${
                 isFragile
                   ? 'bg-red-50 text-red-800 border-red-300 font-semibold'
                   : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
               }`}
             >
-              <AlertTriangle
-                size={16}
-                className={isFragile ? 'text-red-600' : 'text-slate-400'}
-              />
-              <span>Fragile Electronics</span>
+              <div className="flex items-center gap-2">
+                <AlertTriangle
+                  size={16}
+                  className={isFragile ? 'text-red-600' : 'text-slate-400'}
+                />
+                <span>Fragile Electronics</span>
+              </div>
+              {renderAiBadge('is_fragile')}
             </button>
 
             <button
               type="button"
-              onClick={() => setNeedsDisassembly(!needsDisassembly)}
-              className={`p-2.5 rounded-xl border flex items-center gap-2 transition text-left ${
+              onClick={() => {
+                setNeedsDisassembly(!needsDisassembly);
+                markFieldAmended('disassembly_required');
+              }}
+              className={`p-2.5 rounded-xl border flex items-center justify-between transition text-left ${
                 needsDisassembly
                   ? 'bg-amber-50 text-amber-800 border-amber-300 font-semibold'
                   : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
               }`}
             >
-              <Wrench
-                size={16}
-                className={needsDisassembly ? 'text-amber-600' : 'text-slate-400'}
-              />
-              <span>Disassembly Needed</span>
+              <div className="flex items-center gap-2">
+                <Wrench
+                  size={16}
+                  className={needsDisassembly ? 'text-amber-600' : 'text-slate-400'}
+                />
+                <span>Disassembly Needed</span>
+              </div>
+              {renderAiBadge('disassembly_required')}
             </button>
 
             <button
@@ -722,13 +913,19 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
 
           {/* Notes */}
           <div className="space-y-1">
-            <label className="text-xs font-semibold text-slate-700 block">
-              Notes & Special Instructions
-            </label>
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-semibold text-slate-700 block">
+                Notes & Special Instructions
+              </label>
+              {renderAiBadge('notes')}
+            </div>
             <textarea
               rows={2}
               value={notes}
-              onChange={(e) => setNotes(e.target.value)}
+              onChange={(e) => {
+                setNotes(e.target.value);
+                markFieldAmended('notes');
+              }}
               placeholder="e.g. Wall mount screws attached with tape, do not place under heavy boxes, keep upright..."
               className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-teal-500 shadow-sm"
             />
