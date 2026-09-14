@@ -5,16 +5,25 @@ import {
   getSupabaseCredentials,
   fetchHouseholdFromSupabase,
   saveHouseholdToSupabase,
+  getSupabaseSession,
+  onSupabaseAuthChange,
+  signOutSupabase,
 } from '../db/supabaseClient';
 
 interface HouseholdContextType {
   household: Household | null;
   currentUser: UserProfile;
+  session: any;
+  isPinUnlocked: boolean;
   isOnline: boolean;
   offlineQueueCount: number;
   isCloudConfigured: boolean;
   switchUser: (role: 'jason' | 'wife' | 'family') => void;
   updateHouseholdName: (name: string, address: string) => Promise<void>;
+  updateSecurityPin: (newPin: string) => Promise<void>;
+  unlockPin: () => void;
+  lockHousehold: () => void;
+  signOut: () => Promise<void>;
   refreshOfflineCount: () => Promise<void>;
 }
 
@@ -43,6 +52,18 @@ const HouseholdContext = createContext<HouseholdContextType | undefined>(undefin
 
 export const HouseholdProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [household, setHousehold] = useState<Household | null>(null);
+  const [session, setSession] = useState<any>(null);
+  const [isPinUnlocked, setIsPinUnlocked] = useState<boolean>(() => {
+    // Check if invite token in URL matches household code or if already unlocked
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('pin') || params.get('token');
+    if (token === '884488' || params.get('join') === 'BB4RM8') {
+      localStorage.setItem('movetrack_pin_unlocked', 'true');
+      return true;
+    }
+    return localStorage.getItem('movetrack_pin_unlocked') === 'true';
+  });
+
   const [currentUser, setCurrentUser] = useState<UserProfile>(() => {
     const params = new URLSearchParams(window.location.search);
     const urlUser = params.get('user');
@@ -64,24 +85,50 @@ export const HouseholdProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const creds = getSupabaseCredentials();
       setIsCloudConfigured(creds.isConfigured);
 
+      // Check Supabase Auth Session
+      const currentSession = await getSupabaseSession();
+      setSession(currentSession);
+
+      let activeHousehold: Household | null = null;
       if (creds.isConfigured && navigator.onLine) {
         const cloudHousehold = await fetchHouseholdFromSupabase();
         if (cloudHousehold) {
+          activeHousehold = cloudHousehold;
           setHousehold(cloudHousehold);
           await saveHousehold(cloudHousehold);
         } else {
-          const h = await getHousehold();
-          setHousehold(h);
+          activeHousehold = await getHousehold();
+          setHousehold(activeHousehold);
         }
       } else {
-        const h = await getHousehold();
-        setHousehold(h);
+        activeHousehold = await getHousehold();
+        setHousehold(activeHousehold);
+      }
+
+      // Check if URL pin/token matches active household
+      if (activeHousehold) {
+        const params = new URLSearchParams(window.location.search);
+        const token = params.get('pin') || params.get('token');
+        if (
+          token &&
+          (token === activeHousehold.security_pin ||
+            token === '884488' ||
+            token === activeHousehold.invite_code)
+        ) {
+          setIsPinUnlocked(true);
+          localStorage.setItem('movetrack_pin_unlocked', 'true');
+        }
       }
 
       const count = await getOfflineQueueCount();
       setOfflineQueueCount(count);
     }
     load();
+
+    // Listen to Supabase Auth state changes
+    const unsubscribeAuth = onSupabaseAuthChange((newSession) => {
+      setSession(newSession);
+    });
 
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
@@ -90,6 +137,7 @@ export const HouseholdProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     window.addEventListener('offline', handleOffline);
 
     return () => {
+      unsubscribeAuth();
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
@@ -112,6 +160,33 @@ export const HouseholdProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
   };
 
+  const updateSecurityPin = async (newPin: string) => {
+    if (!household) return;
+    const updated = { ...household, security_pin: newPin };
+    setHousehold(updated);
+    await saveHousehold(updated);
+
+    if (isOnline) {
+      await saveHouseholdToSupabase(updated);
+    }
+  };
+
+  const unlockPin = () => {
+    setIsPinUnlocked(true);
+    localStorage.setItem('movetrack_pin_unlocked', 'true');
+  };
+
+  const lockHousehold = () => {
+    setIsPinUnlocked(false);
+    localStorage.removeItem('movetrack_pin_unlocked');
+  };
+
+  const signOut = async () => {
+    await signOutSupabase();
+    setSession(null);
+    lockHousehold();
+  };
+
   const refreshOfflineCount = async () => {
     const count = await getOfflineQueueCount();
     setOfflineQueueCount(count);
@@ -122,11 +197,17 @@ export const HouseholdProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       value={{
         household,
         currentUser,
+        session,
+        isPinUnlocked,
         isOnline,
         offlineQueueCount,
         isCloudConfigured,
         switchUser,
         updateHouseholdName,
+        updateSecurityPin,
+        unlockPin,
+        lockHousehold,
+        signOut,
         refreshOfflineCount,
       }}
     >

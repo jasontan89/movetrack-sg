@@ -251,6 +251,63 @@ export function subscribeToSupabaseChanges(
   };
 }
 
+// Supabase Auth Methods
+export async function signInWithMagicLink(email: string): Promise<{ error: any }> {
+  const client = getSupabaseClient();
+  if (!client) return { error: new Error('Supabase client not configured') };
+  const redirectUrl = window.location.origin + window.location.pathname;
+  return client.auth.signInWithOtp({
+    email,
+    options: {
+      emailRedirectTo: redirectUrl,
+    },
+  });
+}
+
+export async function signInWithPassword(
+  email: string,
+  password: string
+): Promise<{ data: any; error: any }> {
+  const client = getSupabaseClient();
+  if (!client) return { data: null, error: new Error('Supabase client not configured') };
+  return client.auth.signInWithPassword({ email, password });
+}
+
+export async function signUpWithPassword(
+  email: string,
+  password: string
+): Promise<{ data: any; error: any }> {
+  const client = getSupabaseClient();
+  if (!client) return { data: null, error: new Error('Supabase client not configured') };
+  return client.auth.signUp({ email, password });
+}
+
+export async function signOutSupabase(): Promise<{ error: any }> {
+  const client = getSupabaseClient();
+  if (!client) return { error: null };
+  return client.auth.signOut();
+}
+
+export async function getSupabaseSession(): Promise<any> {
+  const client = getSupabaseClient();
+  if (!client) return null;
+  const { data } = await client.auth.getSession();
+  return data?.session || null;
+}
+
+export function onSupabaseAuthChange(callback: (session: any) => void) {
+  const client = getSupabaseClient();
+  if (!client) return () => {};
+  const {
+    data: { subscription },
+  } = client.auth.onAuthStateChange((_event, session) => {
+    callback(session);
+  });
+  return () => {
+    subscription.unsubscribe();
+  };
+}
+
 export const SUPABASE_SQL_SCHEMA = `-- MoveTrack SG Database Schema (PostgreSQL / Supabase)
 -- Created in project lekqqpjjqksixzacbtqz
 

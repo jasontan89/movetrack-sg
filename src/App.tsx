@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { HouseholdProvider } from './context/HouseholdContext';
+import { HouseholdProvider, useHousehold } from './context/HouseholdContext';
 import { ItemProvider, useItems } from './context/ItemContext';
 import { Header } from './components/layout/Header';
 import { BottomNav, NavTab } from './components/layout/BottomNav';
@@ -15,10 +15,13 @@ import { DecisionMatrix } from './components/decisions/DecisionMatrix';
 import { RelocationHub } from './components/logistics/RelocationHub';
 import { SpouseInviteModal } from './components/onboarding/SpouseInviteModal';
 import { SettingsModal } from './components/settings/SettingsModal';
+import { AuthModal } from './components/auth/AuthModal';
+import { HouseholdPinModal } from './components/auth/HouseholdPinModal';
 import { Box, Item } from './types';
 
 const AppContent: React.FC = () => {
-  const { items, boxes } = useItems();
+  const { items, boxes, setFilter } = useItems();
+  const { session, isPinUnlocked, unlockPin, household, isCloudConfigured } = useHousehold();
 
   // Navigation tab
   const [currentTab, setCurrentTab] = useState<NavTab>('items');
@@ -47,6 +50,7 @@ const AppContent: React.FC = () => {
       <Header
         onOpenInvite={() => setShowInviteModal(true)}
         onOpenSettings={() => setShowSettings(true)}
+        onSelectOwnerFilter={(owner) => setFilter('owner', owner)}
       />
 
       {/* 2. Offline / Bomb Shelter banner */}
@@ -146,6 +150,18 @@ const AppContent: React.FC = () => {
 
       {showSettings && (
         <SettingsModal onClose={() => setShowSettings(false)} />
+      )}
+
+      {/* 6. Security Gates: Supabase Auth Modal & Household PIN Gate */}
+      {isCloudConfigured && !session && (
+        <AuthModal />
+      )}
+
+      {(!isCloudConfigured || session) && !isPinUnlocked && (
+        <HouseholdPinModal
+          correctPin={household?.security_pin || '884488'}
+          onSuccess={unlockPin}
+        />
       )}
     </div>
   );

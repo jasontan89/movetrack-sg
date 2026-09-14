@@ -87,6 +87,7 @@ export interface Household {
   name: string;
   address: string;
   invite_code: string;
+  security_pin?: string;
   created_at: string;
 }
 

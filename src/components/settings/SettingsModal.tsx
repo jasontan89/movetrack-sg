@@ -37,6 +37,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
   // Household state
   const [householdName, setHouseholdName] = useState(household?.name || '');
   const [address, setAddress] = useState(household?.address || '');
+  const [securityPin, setSecurityPin] = useState(household?.security_pin || '884488');
+  const { updateSecurityPin } = useHousehold();
 
   const handleSaveSupabase = (e: React.FormEvent) => {
     e.preventDefault();
@@ -54,7 +56,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
   const handleSaveHouseholdInfo = async () => {
     if (householdName.trim()) {
       await updateHouseholdName(householdName.trim(), address.trim());
-      setSaveStatus('Household details updated!');
+      if (securityPin.trim() && securityPin.length === 6) {
+        await updateSecurityPin(securityPin.trim());
+      }
+      setSaveStatus('Household details & PIN updated!');
       setTimeout(() => setSaveStatus(''), 2500);
     }
   };
@@ -141,6 +146,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
                   onChange={(e) => setAddress(e.target.value)}
                   className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs"
                 />
+              </div>
+              <div>
+                <label className="text-[10px] text-slate-500 block mb-0.5">
+                  Household Security PIN (6 Digits)
+                </label>
+                <input
+                  type="text"
+                  maxLength={6}
+                  value={securityPin}
+                  onChange={(e) => setSecurityPin(e.target.value.replace(/\D/g, ''))}
+                  placeholder="884488"
+                  className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-mono font-bold tracking-widest text-teal-700"
+                />
+                <span className="text-[9px] text-slate-400 mt-0.5 block">
+                  Required to unlock household data on new devices.
+                </span>
               </div>
             </div>
           </div>

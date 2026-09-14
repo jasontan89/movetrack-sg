@@ -11,9 +11,10 @@ export const SpouseInviteModal: React.FC<SpouseInviteModalProps> = ({ onClose })
   const { household } = useHousehold();
   const [copied, setCopied] = useState(false);
 
-  // Generate invite link with ?join=CODE&user=wife
+  // Generate invite link with ?join=CODE&user=wife&pin=SECURITY_PIN
   const baseUrl = window.location.origin + window.location.pathname;
-  const inviteLink = `${baseUrl}?join=${household?.invite_code || 'BB4RM8'}&user=wife`;
+  const pin = household?.security_pin || '884488';
+  const inviteLink = `${baseUrl}?join=${household?.invite_code || 'BB4RM8'}&user=wife&pin=${pin}`;
 
   const whatsappMessage = encodeURIComponent(
     `Hey dear! Here is our Bukit Batok house moving tracker app: ${inviteLink}\nTap this link on your phone to open and start cataloging your items!`
