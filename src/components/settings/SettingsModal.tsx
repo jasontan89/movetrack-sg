@@ -19,7 +19,10 @@ import {
   Home,
   Sparkles,
   Trash2,
+  Smartphone,
+  UploadCloud,
 } from 'lucide-react';
+import { PhoneSyncModal } from '../sync/PhoneSyncModal';
 
 interface SettingsModalProps {
   onClose: () => void;
@@ -43,6 +46,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
   const [householdName, setHouseholdName] = useState(household?.name || '');
   const [address, setAddress] = useState(household?.address || '');
   const [securityPin, setSecurityPin] = useState(household?.security_pin || '884488');
+  const [showPhoneSyncModal, setShowPhoneSyncModal] = useState(false);
   const { updateSecurityPin } = useHousehold();
 
   const handleSaveSupabase = (e: React.FormEvent) => {
@@ -243,6 +247,34 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
               <p className="text-emerald-700 font-semibold text-[11px]">{saveStatus}</p>
             )}
           </form>
+
+          {/* Direct Phone to Supabase Sync Action */}
+          <div className="bg-gradient-to-r from-teal-50 to-emerald-50 border border-teal-200 p-3.5 rounded-2xl space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-teal-900 flex items-center gap-1.5 text-xs">
+                <Smartphone size={15} className="text-teal-700" />
+                <span>Sync Phone Data to Supabase</span>
+              </span>
+              <span className="text-[10px] bg-teal-200/80 text-teal-800 font-bold px-2 py-0.5 rounded-full">
+                Phone Recovery
+              </span>
+            </div>
+            <p className="text-[11px] text-teal-800 leading-relaxed">
+              Have items, boxes, or photos stored locally on this phone that didn't upload to Supabase? Scan your phone's storage and push all data directly into the cloud.
+            </p>
+            <button
+              type="button"
+              onClick={() => setShowPhoneSyncModal(true)}
+              className="w-full py-2.5 px-3 rounded-xl bg-teal-700 hover:bg-teal-800 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition active:scale-95"
+            >
+              <UploadCloud size={14} />
+              <span>Scan Phone & Push to Supabase</span>
+            </button>
+          </div>
+
+          {showPhoneSyncModal && (
+            <PhoneSyncModal onClose={() => setShowPhoneSyncModal(false)} />
+          )}
 
           {/* Google Gemini AI Configuration */}
           <form onSubmit={handleSaveGeminiKey} className="space-y-2.5">

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useItems } from '../../context/ItemContext';
 import { useHousehold } from '../../context/HouseholdContext';
 import { ItemCard, formatRoomName } from './ItemCard';
@@ -12,7 +12,11 @@ import {
   Wrench,
   PackageOpen,
   Sparkles,
+  UploadCloud,
+  Smartphone,
 } from 'lucide-react';
+import { scanLocalPhoneData } from '../../services/syncService';
+import { PhoneSyncModal } from '../sync/PhoneSyncModal';
 
 interface ItemListProps {
   onSelectItem: (item: Item) => void;
@@ -33,6 +37,25 @@ const ROOMS: { id: Room | 'all'; label: string }[] = [
 export const ItemList: React.FC<ItemListProps> = ({ onSelectItem, onOpenAddModal }) => {
   const { items, boxes, filters, filteredItems, setFilter, resetFilters } = useItems();
   const { currentUser } = useHousehold();
+  const [showSyncModal, setShowSyncModal] = useState(false);
+  const [unsyncedCount, setUnsyncedCount] = useState(0);
+
+  useEffect(() => {
+    const checkUnsynced = async () => {
+      const scan = await scanLocalPhoneData();
+      if (scan.hasUnsyncedData) {
+        setUnsyncedCount(
+          scan.unsyncedItems.length +
+            scan.unsyncedBoxes.length +
+            scan.itemsWithLocalPhotos.length +
+            scan.offlineQueueCount
+        );
+      } else {
+        setUnsyncedCount(0);
+      }
+    };
+    checkUnsynced();
+  }, [items, boxes]);
 
   const jasonCount = items.filter((i) => i.owner === 'jason').length;
   const wifeCount = items.filter((i) => i.owner === 'wife').length;
@@ -40,6 +63,33 @@ export const ItemList: React.FC<ItemListProps> = ({ onSelectItem, onOpenAddModal
 
   return (
     <div className="space-y-3 pb-24">
+      {/* Un-synced Phone Data Alert Banner */}
+      {unsyncedCount > 0 && (
+        <div className="bg-gradient-to-r from-amber-500 to-orange-600 rounded-2xl p-3.5 text-white shadow-md flex items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-8 h-8 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+              <UploadCloud size={18} />
+            </div>
+            <div className="min-w-0">
+              <h4 className="font-bold text-xs leading-tight">
+                Phone Data Ready to Sync!
+              </h4>
+              <p className="text-[11px] text-amber-100 mt-0.5 truncate">
+                Found {unsyncedCount} un-synced item(s)/box(es) or photo(s) on this phone.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => setShowSyncModal(true)}
+            className="px-3 py-1.5 bg-white text-orange-900 rounded-xl font-bold text-xs hover:bg-amber-50 transition active:scale-95 shrink-0 shadow flex items-center gap-1"
+          >
+            <Smartphone size={13} />
+            <span>Sync Now</span>
+          </button>
+        </div>
+      )}
+
+      {showSyncModal && <PhoneSyncModal onClose={() => setShowSyncModal(false)} />}
       {/* 1. Owner Quick Filter Tabs */}
       <div className="bg-slate-100 p-1 rounded-xl flex items-center gap-1 text-xs font-medium">
         <button

@@ -18,6 +18,7 @@ import {
   deleteItemFromSupabase,
   saveBoxToSupabase,
   deleteBoxFromSupabase,
+  uploadBase64PhotoToSupabase,
   purgeAllFromSupabase,
   subscribeToSupabaseChanges,
   getSupabaseCredentials,
@@ -186,9 +187,18 @@ export const ItemProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const now = new Date().toISOString();
     const cbm = itemData.cbm || calculateCbm(itemData.dimensions_cm);
 
+    let photoUrl = itemData.photo_url;
+    if (photoUrl && photoUrl.startsWith('data:image/')) {
+      const cloudUrl = await uploadBase64PhotoToSupabase(photoUrl, id);
+      if (cloudUrl) {
+        photoUrl = cloudUrl;
+      }
+    }
+
     const newItem: Item = {
       ...itemData,
       id,
+      photo_url: photoUrl,
       cbm,
       created_at: now,
       updated_at: now,
@@ -216,7 +226,20 @@ export const ItemProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Update Item
   const updateItem = async (updated: Item) => {
     const cbm = calculateCbm(updated.dimensions_cm);
-    const itemToSave = { ...updated, cbm, updated_at: new Date().toISOString() };
+    let photoUrl = updated.photo_url;
+    if (photoUrl && photoUrl.startsWith('data:image/')) {
+      const cloudUrl = await uploadBase64PhotoToSupabase(photoUrl, updated.id);
+      if (cloudUrl) {
+        photoUrl = cloudUrl;
+      }
+    }
+
+    const itemToSave = {
+      ...updated,
+      photo_url: photoUrl,
+      cbm,
+      updated_at: new Date().toISOString(),
+    };
 
     setItems((prev) => prev.map((i) => (i.id === itemToSave.id ? itemToSave : i)));
     await dbSaveItem(itemToSave);

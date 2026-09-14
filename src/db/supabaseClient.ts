@@ -6,11 +6,19 @@ const SUPABASE_ANON_KEY = 'movetrack_supabase_anon_key';
 
 let cachedClient: SupabaseClient | null = null;
 
+const DEFAULT_SUPABASE_URL = 'https://lekqqpjjqksixzacbtqz.supabase.co';
+const DEFAULT_SUPABASE_ANON_KEY =
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxla3FxcGpqcWtzaXh6YWNidHF6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxNTg3OTIsImV4cCI6MjA5NzczNDc5Mn0.lm3RSzROrUXSf7PebicPrXHPErQldVBxxcDzUGHme5Y';
+
 export function getSupabaseCredentials() {
   const url =
-    localStorage.getItem(SUPABASE_URL_KEY) || import.meta.env.VITE_SUPABASE_URL || '';
+    localStorage.getItem(SUPABASE_URL_KEY) ||
+    import.meta.env.VITE_SUPABASE_URL ||
+    DEFAULT_SUPABASE_URL;
   const anonKey =
-    localStorage.getItem(SUPABASE_ANON_KEY) || import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+    localStorage.getItem(SUPABASE_ANON_KEY) ||
+    import.meta.env.VITE_SUPABASE_ANON_KEY ||
+    DEFAULT_SUPABASE_ANON_KEY;
   return { url, anonKey, isConfigured: Boolean(url && anonKey) };
 }
 
@@ -65,6 +73,55 @@ export async function uploadPhotoToSupabase(file: File, itemId: string): Promise
     return null;
   }
 }
+
+// Upload base64 photo data URL directly to Supabase Storage
+export async function uploadBase64PhotoToSupabase(
+  dataUrl: string,
+  itemId: string
+): Promise<string | null> {
+  const client = getSupabaseClient();
+  if (!client) return null;
+
+  try {
+    if (dataUrl.startsWith('http://') || dataUrl.startsWith('https://')) {
+      return dataUrl;
+    }
+
+    const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+    if (!match) return null;
+
+    const mimeType = match[1];
+    const base64Data = match[2];
+
+    const binaryStr = atob(base64Data);
+    const bytes = new Uint8Array(binaryStr.length);
+    for (let i = 0; i < binaryStr.length; i++) {
+      bytes[i] = binaryStr.charCodeAt(i);
+    }
+
+    const ext = mimeType.split('/')[1] || 'webp';
+    const filePath = `items/${itemId}-${Date.now()}.${ext}`;
+
+    const { error: uploadError } = await client.storage
+      .from('movetrack-photos')
+      .upload(filePath, bytes.buffer, {
+        contentType: mimeType,
+        upsert: true,
+      });
+
+    if (uploadError) {
+      console.error('Supabase storage base64 upload error:', uploadError);
+      return null;
+    }
+
+    const { data } = client.storage.from('movetrack-photos').getPublicUrl(filePath);
+    return data?.publicUrl || null;
+  } catch (err) {
+    console.error('Failed to upload base64 photo to Supabase:', err);
+    return null;
+  }
+}
+
 
 // Fetch all items from Supabase movetrack_items
 export async function fetchItemsFromSupabase(): Promise<Item[] | null> {
@@ -158,6 +215,7 @@ export async function saveItemToSupabase(item: Item): Promise<boolean> {
       box_id: item.box_id,
       carousell_details: item.carousell_details,
       notes: item.notes,
+      ai_generated_fields: item.ai_generated_fields || [],
       updated_at: new Date().toISOString(),
     });
 
