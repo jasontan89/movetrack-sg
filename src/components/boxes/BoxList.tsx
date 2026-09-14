@@ -123,66 +123,90 @@ export const BoxList: React.FC<BoxListProps> = ({
       </div>
 
       {/* Boxes Grid */}
-      <div className="space-y-2.5">
-        {boxes.map((box) => {
-          const boxItems = items.filter((i) => i.box_id === box.id);
-          const totalBoxWeight = boxItems.reduce(
-            (acc, i) => acc + (Number(i.weight_kg) || 0),
-            0
-          );
-          const hasFragile = box.is_fragile || boxItems.some((i) => i.is_fragile);
+      {boxes.length > 0 ? (
+        <div className="space-y-2.5">
+          {boxes.map((box) => {
+            const boxItems = items.filter((i) => i.box_id === box.id);
+            const totalBoxWeight = boxItems.reduce(
+              (acc, i) => acc + (Number(i.weight_kg) || 0),
+              0
+            );
+            const hasFragile = box.is_fragile || boxItems.some((i) => i.is_fragile);
 
-          return (
-            <div
-              key={box.id}
-              onClick={() => onSelectBox(box)}
-              className="bg-white rounded-2xl border border-slate-200/90 p-3.5 shadow-sm hover:shadow-md hover:border-teal-300 transition-all cursor-pointer flex items-center justify-between gap-3 active:scale-[0.99]"
-            >
-              <div className="flex items-center gap-3 min-w-0">
-                {/* Box Number Icon */}
-                <div className="w-12 h-12 rounded-xl bg-slate-100 border border-slate-200 flex flex-col items-center justify-center shrink-0 text-slate-800">
-                  <span className="text-[9px] font-bold text-slate-400 uppercase leading-none">
-                    BOX
-                  </span>
-                  <span className="text-base font-black leading-tight text-teal-700">
-                    #{box.box_number}
-                  </span>
-                </div>
-
-                {/* Box Label & Details */}
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <span className="font-bold text-slate-900 text-sm truncate">
-                      {box.label}
+            return (
+              <div
+                key={box.id}
+                onClick={() => onSelectBox(box)}
+                className="bg-white rounded-2xl border border-slate-200/90 p-3.5 shadow-sm hover:shadow-md hover:border-teal-300 transition-all cursor-pointer flex items-center justify-between gap-3 active:scale-[0.99]"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  {/* Box Number Icon */}
+                  <div className="w-12 h-12 rounded-xl bg-slate-100 border border-slate-200 flex flex-col items-center justify-center shrink-0 text-slate-800">
+                    <span className="text-[9px] font-bold text-slate-400 uppercase leading-none">
+                      BOX
                     </span>
-                    {hasFragile && (
-                      <span className="text-[9px] font-bold text-red-700 bg-red-50 border border-red-200 px-1.5 py-0.2 rounded flex items-center gap-0.5 shrink-0">
-                        <AlertTriangle size={9} />
-                        FRAGILE
+                    <span className="text-base font-black leading-tight text-teal-700">
+                      #{box.box_number}
+                    </span>
+                  </div>
+
+                  {/* Box Label & Details */}
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-bold text-slate-900 text-sm truncate">
+                        {box.label}
                       </span>
-                    )}
-                  </div>
+                      {hasFragile && (
+                        <span className="text-[9px] font-bold text-red-700 bg-red-50 border border-red-200 px-1.5 py-0.2 rounded flex items-center gap-0.5 shrink-0">
+                          <AlertTriangle size={9} />
+                          FRAGILE
+                        </span>
+                      )}
+                    </div>
 
-                  <div className="flex items-center gap-2 text-xs text-slate-500 mt-1">
-                    <span className="font-medium text-slate-700">
-                      Destination: {box.room_destination || 'General'}
-                    </span>
-                    <span>•</span>
-                    <span>{boxItems.length} items</span>
-                    <span>•</span>
-                    <span>~{totalBoxWeight.toFixed(1)} kg</span>
+                    <div className="flex items-center gap-2 text-xs text-slate-500 mt-1">
+                      <span className="font-medium text-slate-700">
+                        Destination: {box.room_destination || 'General'}
+                      </span>
+                      <span>•</span>
+                      <span>{boxItems.length} items</span>
+                      <span>•</span>
+                      <span>~{totalBoxWeight.toFixed(1)} kg</span>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <div className="flex items-center gap-2 shrink-0 text-slate-400">
-                <QrCode size={20} className="text-teal-600/70" />
-                <ChevronRight size={18} />
+                <div className="flex items-center gap-2 shrink-0 text-slate-400">
+                  <QrCode size={20} className="text-teal-600/70" />
+                  <ChevronRight size={18} />
+                </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="bg-white rounded-2xl border border-dashed border-slate-300 p-8 text-center space-y-3">
+          <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mx-auto text-slate-400">
+            <Archive size={24} />
+          </div>
+          <div>
+            <h4 className="font-bold text-slate-800 text-sm">No moving boxes created</h4>
+            <p className="text-xs text-slate-500 mt-1 max-w-xs mx-auto">
+              Create numbered boxes with destination rooms, print QR codes, and pack your items.
+            </p>
+          </div>
+          <button
+            onClick={() => {
+              setNewBoxNumber(1);
+              setShowAddBoxModal(true);
+            }}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-teal-600 text-white text-xs font-semibold hover:bg-teal-700 transition active:scale-95 shadow-sm"
+          >
+            <Plus size={14} />
+            <span>Create First Box</span>
+          </button>
+        </div>
+      )}
 
       {/* Add Box Modal */}
       {showAddBoxModal && (

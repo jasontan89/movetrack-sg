@@ -7,8 +7,9 @@ import {
   saveItem as dbSaveItem,
   deleteBox as dbDeleteBox,
   deleteItem as dbDeleteItem,
-  resetToSampleData,
+  purgeAllData,
   enqueueOfflineAction,
+  getDb,
 } from '../db';
 import {
   fetchItemsFromSupabase,
@@ -17,6 +18,7 @@ import {
   deleteItemFromSupabase,
   saveBoxToSupabase,
   deleteBoxFromSupabase,
+  purgeAllFromSupabase,
   subscribeToSupabaseChanges,
   getSupabaseCredentials,
 } from '../db/supabaseClient';
@@ -73,22 +75,31 @@ export const ItemProvider: React.FC<{ children: React.ReactNode }> = ({ children
           fetchBoxesFromSupabase(),
         ]);
 
-        if (cloudItems && cloudItems.length > 0) {
+        if (cloudItems !== null) {
           setItems(cloudItems);
-          // Cache to IndexedDB in background
+          // Mirror authoritative cloud items to local IndexedDB cache
+          const db = await getDb();
+          const tx = db.transaction('items', 'readwrite');
+          await tx.objectStore('items').clear();
           for (const item of cloudItems) {
-            await dbSaveItem(item);
+            await tx.objectStore('items').put(item);
           }
+          await tx.done;
         } else {
           const localItems = await getAllItems();
           setItems(localItems);
         }
 
-        if (cloudBoxes && cloudBoxes.length > 0) {
-          setBoxes(cloudBoxes.sort((a, b) => a.box_number - b.box_number));
-          for (const box of cloudBoxes) {
-            await dbSaveBox(box);
+        if (cloudBoxes !== null) {
+          const sorted = cloudBoxes.sort((a, b) => a.box_number - b.box_number);
+          setBoxes(sorted);
+          const db = await getDb();
+          const tx = db.transaction('boxes', 'readwrite');
+          await tx.objectStore('boxes').clear();
+          for (const box of sorted) {
+            await tx.objectStore('boxes').put(box);
           }
+          await tx.done;
         } else {
           const localBoxes = await getAllBoxes();
           setBoxes(localBoxes.sort((a, b) => a.box_number - b.box_number));
@@ -294,10 +305,14 @@ export const ItemProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // Reset to sample data
+  // Purge all data (IndexedDB and Supabase)
   const resetAllData = async () => {
-    await resetToSampleData();
-    await reloadAll();
+    await purgeAllData();
+    if (isOnline) {
+      await purgeAllFromSupabase();
+    }
+    setItems([]);
+    setBoxes([]);
   };
 
   // Filtered items computation

@@ -18,6 +18,7 @@ import {
   AlertTriangle,
   Home,
   Sparkles,
+  Trash2,
 } from 'lucide-react';
 
 interface SettingsModalProps {
@@ -278,13 +279,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
             </div>
           </form>
 
-          {/* Data Backup & Reset */}
+          {/* Data Backup & Clear */}
           <div className="space-y-2 pt-2 border-t border-slate-200">
-            <span className="font-bold text-slate-800 block">Backup & Reset</span>
+            <span className="font-bold text-slate-800 block">Backup & Clear</span>
             <div className="grid grid-cols-2 gap-2">
               <button
                 onClick={handleExportJson}
-                className="p-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 transition flex items-center justify-center gap-1.5 font-semibold text-slate-700"
+                className="p-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 transition flex items-center justify-center gap-1.5 font-semibold text-slate-700 text-xs"
               >
                 <Download size={14} />
                 <span>Export JSON</span>
@@ -295,18 +296,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
                   onClick={handleResetSample}
                   className="p-2.5 rounded-xl bg-red-600 text-white font-bold hover:bg-red-700 transition text-[11px]"
                 >
-                  Confirm Reset Data
+                  Confirm Purge All
                 </button>
               ) : (
                 <button
                   onClick={() => setConfirmReset(true)}
                   className="p-2.5 rounded-xl border border-red-200 bg-red-50 hover:bg-red-100 text-red-700 transition flex items-center justify-center gap-1.5 font-semibold text-[11px]"
                 >
-                  <RefreshCw size={13} />
-                  <span>Reset Sample Data</span>
+                  <Trash2 size={13} />
+                  <span>Purge All Records</span>
                 </button>
               )}
             </div>
+            <p className="text-[10px] text-slate-400">
+              Permanently purges all items and boxes from local storage and connected Supabase cloud database.
+            </p>
           </div>
         </div>
 

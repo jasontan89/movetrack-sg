@@ -224,6 +224,24 @@ export async function saveHouseholdToSupabase(household: Household): Promise<boo
   }
 }
 
+// Purge all items and boxes from Supabase tables
+export async function purgeAllFromSupabase(): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client) return false;
+
+  try {
+    const [resItems, resBoxes] = await Promise.all([
+      client.from('movetrack_items').delete().neq('id', '0'),
+      client.from('movetrack_boxes').delete().neq('id', '0'),
+    ]);
+    return !resItems.error && !resBoxes.error;
+  } catch (err) {
+    console.error('Exception purging Supabase items/boxes:', err);
+    return false;
+  }
+}
+
+
 // Real-time listener subscription
 export function subscribeToSupabaseChanges(
   onItemChange: (payload: any) => void,

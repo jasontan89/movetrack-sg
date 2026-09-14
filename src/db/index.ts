@@ -74,23 +74,15 @@ export function getDb() {
 let isInitialized = false;
 let initPromise: Promise<void> | null = null;
 
-// Seed mock data if database is new or empty
+// Initialize database structure and household profile
 export async function initializeDatabase(): Promise<void> {
   if (isInitialized) return;
   if (!initPromise) {
     initPromise = (async () => {
       const db = await getDb();
-      const existingItems = await db.getAll('items');
-      if (existingItems.length === 0) {
-        const tx = db.transaction(['household', 'boxes', 'items'], 'readwrite');
-        await tx.objectStore('household').put(INITIAL_HOUSEHOLD);
-        for (const box of INITIAL_BOXES) {
-          await tx.objectStore('boxes').put(box);
-        }
-        for (const item of INITIAL_ITEMS) {
-          await tx.objectStore('items').put(item);
-        }
-        await tx.done;
+      const existingHousehold = await db.getAll('household');
+      if (existingHousehold.length === 0) {
+        await db.put('household', INITIAL_HOUSEHOLD);
       }
       isInitialized = true;
     })();
@@ -178,20 +170,13 @@ export async function clearOfflineQueue(): Promise<void> {
   await db.clear('offline_queue');
 }
 
-export async function resetToSampleData(): Promise<void> {
+export async function purgeAllData(): Promise<void> {
   const db = await getDb();
-  const tx = db.transaction(['household', 'boxes', 'items', 'offline_queue'], 'readwrite');
-  await tx.objectStore('household').clear();
+  const tx = db.transaction(['boxes', 'items', 'offline_queue'], 'readwrite');
   await tx.objectStore('boxes').clear();
   await tx.objectStore('items').clear();
   await tx.objectStore('offline_queue').clear();
-
-  await tx.objectStore('household').put(INITIAL_HOUSEHOLD);
-  for (const box of INITIAL_BOXES) {
-    await tx.objectStore('boxes').put(box);
-  }
-  for (const item of INITIAL_ITEMS) {
-    await tx.objectStore('items').put(item);
-  }
   await tx.done;
 }
+
+export const resetToSampleData = purgeAllData;
