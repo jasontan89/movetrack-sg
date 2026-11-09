@@ -23,13 +23,37 @@ export type Category =
   | 'other';
 
 export type DecisionStatus =
-  | 'keep_pack'
+  | 'keep_pack'          // Move to New Rental House (Condo)
+  | 'move_hq'            // Move to Mom's House (HQ)
   | 'sell_carousell'
   | 'donate_bless'
   | 'hdb_bulky_disposal'
   | 'alba_ewaste'
   | 'discard_trash'
   | 'undecided_discuss';
+
+export type MoveDestinationScope = 'all' | 'rental_condo' | 'moms_hq';
+
+export function isMovingDecision(status: DecisionStatus): boolean {
+  return status === 'keep_pack' || status === 'move_hq';
+}
+
+export function getBoxDestinationHouse(
+  box: { room_destination?: string; label?: string; notes?: string },
+  boxItems: { decision_status: DecisionStatus }[] = []
+): 'rental_condo' | 'moms_hq' {
+  const combinedText = `${box.room_destination || ''} ${box.label || ''} ${box.notes || ''}`.toLowerCase();
+  if (combinedText.includes('mom') || combinedText.includes('hq')) {
+    return 'moms_hq';
+  }
+  if (combinedText.includes('condo') || combinedText.includes('rental')) {
+    return 'rental_condo';
+  }
+  if (boxItems.length > 0 && boxItems.every((i) => i.decision_status === 'move_hq')) {
+    return 'moms_hq';
+  }
+  return 'rental_condo';
+}
 
 export type CarousellStatus = 'draft' | 'listed' | 'reserved' | 'sold';
 
@@ -71,6 +95,8 @@ export interface Item {
   synced?: boolean;
 }
 
+export type BoxStatus = 'packing' | 'sealed' | 'loaded' | 'delivered' | 'unpacked';
+
 export interface Box {
   id: string;
   household_id: string;
@@ -78,6 +104,7 @@ export interface Box {
   label: string;
   room_destination: string;
   is_fragile: boolean;
+  status?: BoxStatus;
   qr_code_id: string;
   notes?: string;
   created_at: string;
@@ -87,6 +114,8 @@ export interface Household {
   id: string;
   name: string;
   address: string;
+  destination_address?: string;
+  move_date?: string;
   invite_code: string;
   security_pin?: string;
   created_at: string;
@@ -99,6 +128,8 @@ export interface UserProfile {
   avatar_color: string;
 }
 
+export type SortOption = 'date_desc' | 'date_asc' | 'name_asc' | 'weight_desc' | 'cbm_desc' | 'price_desc';
+
 export interface FilterOptions {
   owner: 'all' | Owner;
   room: 'all' | Room;
@@ -108,6 +139,7 @@ export interface FilterOptions {
   boxId?: 'all' | 'unboxed' | string;
   onlyFragile?: boolean;
   needsDisassembly?: boolean;
+  sortBy?: SortOption;
 }
 
 export interface LorryRecommendation {

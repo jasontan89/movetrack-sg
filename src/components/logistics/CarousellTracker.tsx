@@ -1,6 +1,6 @@
 import React from 'react';
 import { useItems } from '../../context/ItemContext';
-import { DollarSign, ExternalLink, CheckCircle, Clock } from 'lucide-react';
+import { DollarSign, ExternalLink } from 'lucide-react';
 
 export const CarousellTracker: React.FC = () => {
   const { items } = useItems();

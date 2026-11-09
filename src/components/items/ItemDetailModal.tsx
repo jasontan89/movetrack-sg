@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Box, DecisionStatus, Item } from '../../types';
+import { Box, DecisionStatus, isMovingDecision, Item } from '../../types';
 import { useItems } from '../../context/ItemContext';
 import { formatRoomName, getDecisionBadge } from './ItemCard';
 import {
@@ -54,8 +54,27 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({
       ? 'bg-rose-100 text-rose-800'
       : 'bg-teal-100 text-teal-800';
 
+  const isTbc =
+    item.name.toUpperCase().includes('(TBC)') || Boolean(item.notes?.toUpperCase().includes('[TBC]'));
+
   const handleQuickDecisionChange = async (newStatus: DecisionStatus) => {
-    await updateItem({ ...item, decision_status: newStatus });
+    await updateItem({
+      ...item,
+      decision_status: newStatus,
+      box_id: isMovingDecision(newStatus) ? item.box_id : null,
+    });
+  };
+
+  const handleToggleTbc = async () => {
+    if (isTbc) {
+      const cleanedName = item.name.replace(/\s*\(TBC\)/gi, '').trim();
+      const cleanedNotes = (item.notes || '').replace(/\[TBC\]\s*/gi, '').trim();
+      await updateItem({ ...item, name: cleanedName, notes: cleanedNotes });
+    } else {
+      const nextName = item.name.includes('(TBC)') ? item.name : `${item.name} (TBC)`;
+      const nextNotes = item.notes ? `[TBC] ${item.notes}` : '[TBC] Tentative item';
+      await updateItem({ ...item, name: nextName, notes: nextNotes });
+    }
   };
 
   const handleQuickBoxChange = async (newBoxId: string) => {
@@ -150,31 +169,49 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({
           )}
 
           {/* Current Decision Status Banner */}
-          <div className={`p-3.5 rounded-2xl border flex items-center justify-between ${decision.bg}`}>
+          <div className={`p-3.5 rounded-2xl border flex items-center justify-between gap-2 ${decision.bg}`}>
             <div className="flex items-center gap-2">
               <span className="text-lg">{decision.icon}</span>
               <div>
-                <div className="font-bold text-xs flex items-center gap-1.5">
+                <div className="font-bold text-xs flex items-center gap-1.5 flex-wrap">
                   <span>Decision: {decision.label}</span>
+                  {isTbc && (
+                    <span className="bg-amber-200 text-amber-900 px-1.5 py-0.5 rounded-full text-[9px] font-bold">
+                      TBC
+                    </span>
+                  )}
                   {renderAiPill('decision_status')}
                 </div>
                 <div className="text-[11px] opacity-80">
-                  {item.decision_status === 'keep_pack' && 'Will be transported to new flat'}
+                  {item.decision_status === 'keep_pack' && 'Will be packed & transported to New Rental House (Condo)'}
+                  {item.decision_status === 'move_hq' && "Will be transported to Mom's House (HQ)"}
                   {item.decision_status === 'sell_carousell' &&
                     `Listed on Carousell (Asking: $${item.carousell_details?.asking_price || 0} SGD)`}
                   {item.decision_status === 'donate_bless' && 'Bless on Olio or Pass-It-On'}
                   {item.decision_status === 'hdb_bulky_disposal' && 'Jurong-Clementi Town Council 3-item free slot'}
                   {item.decision_status === 'alba_ewaste' && 'ALBA e-waste recycling at West Mall / CC'}
+                  {item.decision_status === 'discard_trash' && 'General trash disposal / chute'}
                   {item.decision_status === 'undecided_discuss' && 'Pending discussion between Jason & Wife'}
                 </div>
               </div>
             </div>
+            <button
+              onClick={handleToggleTbc}
+              className={`shrink-0 px-2.5 py-1 rounded-xl border text-[10px] font-bold transition ${
+                isTbc
+                  ? 'bg-amber-600 text-white border-amber-700'
+                  : 'bg-white/80 text-slate-700 border-slate-300 hover:bg-white'
+              }`}
+              title="Toggle TBC (To Be Confirmed) flag"
+            >
+              {isTbc ? '✓ Confirmed (Clear TBC)' : 'Flag as TBC?'}
+            </button>
           </div>
 
           {/* Quick Decision Switcher Bar */}
           <div className="space-y-1.5">
             <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
-              Quick Change Decision
+              Quick Change Destination / Decision
             </span>
             <div className="grid grid-cols-3 gap-1.5 text-xs">
               <button
@@ -185,7 +222,27 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({
                     : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
                 }`}
               >
-                Keep & Move
+                🏢 Rental (Condo)
+              </button>
+              <button
+                onClick={() => handleQuickDecisionChange('move_hq')}
+                className={`py-1.5 px-2 rounded-lg border text-center transition text-[11px] font-medium ${
+                  item.decision_status === 'move_hq'
+                    ? 'bg-indigo-600 text-white border-indigo-600 font-bold'
+                    : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                }`}
+              >
+                🏡 Mom's (HQ)
+              </button>
+              <button
+                onClick={() => handleQuickDecisionChange('undecided_discuss')}
+                className={`py-1.5 px-2 rounded-lg border text-center transition text-[11px] font-medium ${
+                  item.decision_status === 'undecided_discuss'
+                    ? 'bg-yellow-500 text-white border-yellow-500 font-bold'
+                    : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                }`}
+              >
+                🤔 To Discuss
               </button>
               <button
                 onClick={() => handleQuickDecisionChange('sell_carousell')}
@@ -198,6 +255,16 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({
                 Sell Carousell
               </button>
               <button
+                onClick={() => handleQuickDecisionChange('donate_bless')}
+                className={`py-1.5 px-2 rounded-lg border text-center transition text-[11px] font-medium ${
+                  item.decision_status === 'donate_bless'
+                    ? 'bg-purple-600 text-white border-purple-600 font-bold'
+                    : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                }`}
+              >
+                Donate / Bless
+              </button>
+              <button
                 onClick={() => handleQuickDecisionChange('hdb_bulky_disposal')}
                 className={`py-1.5 px-2 rounded-lg border text-center transition text-[11px] font-medium ${
                   item.decision_status === 'hdb_bulky_disposal'
@@ -206,6 +273,26 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({
                 }`}
               >
                 TC Bulky
+              </button>
+              <button
+                onClick={() => handleQuickDecisionChange('alba_ewaste')}
+                className={`py-1.5 px-2 rounded-lg border text-center transition text-[11px] font-medium ${
+                  item.decision_status === 'alba_ewaste'
+                    ? 'bg-amber-600 text-white border-amber-600 font-bold'
+                    : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                }`}
+              >
+                ALBA E-Waste
+              </button>
+              <button
+                onClick={() => handleQuickDecisionChange('discard_trash')}
+                className={`py-1.5 px-2 rounded-lg border text-center transition text-[11px] font-medium ${
+                  item.decision_status === 'discard_trash'
+                    ? 'bg-slate-700 text-white border-slate-700 font-bold'
+                    : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                }`}
+              >
+                General Trash
               </button>
             </div>
           </div>
@@ -355,11 +442,19 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({
                   {item.carousell_details.status || 'draft'}
                 </span>
               </div>
-              {item.carousell_details.listing_url && (
+              {item.carousell_details.sold_price !== undefined && (
+                <div className="flex items-center justify-between text-xs">
+                  <span>Sold Price:</span>
+                  <strong className="text-emerald-700 text-sm">
+                    ${item.carousell_details.sold_price} SGD
+                  </strong>
+                </div>
+              )}
+              {item.carousell_details.listing_url && /^https?:\/\//i.test(item.carousell_details.listing_url.trim()) && (
                 <a
-                  href={item.carousell_details.listing_url}
+                  href={item.carousell_details.listing_url.trim()}
                   target="_blank"
-                  rel="noreferrer"
+                  rel="noopener noreferrer"
                   className="text-[11px] text-orange-700 underline flex items-center gap-1 font-medium mt-1"
                 >
                   <ExternalLink size={12} />

@@ -1,4 +1,5 @@
 import { Category, DecisionStatus, Dimensions, Room } from '../types';
+import { getSupabaseCredentials } from '../db/supabaseClient';
 
 export interface AiItemExtraction {
   name: string;
@@ -83,9 +84,9 @@ async function getImageBase64(imageUrl: string): Promise<{ mimeType: string; dat
 }
 
 /**
- * Call Gemini API with a specific model
+ * Call Gemini API directly (client-side fallback if user provided direct key)
  */
-async function callGeminiApi(
+async function callGeminiApiDirect(
   model: string,
   apiKey: string,
   imageData: { mimeType: string; data: string }
@@ -153,23 +154,71 @@ Return ONLY a valid, raw JSON object (no markdown code blocks, no backticks, jus
     throw new Error('Empty response received from Gemini API');
   }
 
-  // Clean any markdown formatting if present
   const cleanedJson = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
   return JSON.parse(cleanedJson);
 }
 
 /**
- * Analyzes an equipment photo using Gemini Flash Lite with primary model and secondary fallback.
+ * Analyzes an equipment photo using Supabase Edge Function `movetrack-analyze`
+ * or direct Gemini API as fallback.
  */
 export async function analyzeEquipmentPhoto(imageUrl: string): Promise<AiItemExtraction> {
-  const apiKey =
-    (import.meta as any).env.VITE_GEMINI_API_KEY?.trim() ||
+  const customApiKey =
     (typeof window !== 'undefined' && localStorage.getItem('movetrack_gemini_api_key')) ||
-    (typeof window !== 'undefined' && (window as any).__MOCK_GEMINI_API_KEY__);
+    (typeof window !== 'undefined' && (window as any).__MOCK_GEMINI_API_KEY__) ||
+    '';
 
-  if (!apiKey) {
+  const creds = getSupabaseCredentials();
+
+  // 1. Try secure Supabase Edge Function first if cloud is configured
+  if (creds.isConfigured && creds.url) {
+    try {
+      const edgeUrl = `${creds.url.replace(/\/$/, '')}/functions/v1/movetrack-analyze`;
+      const edgeRes = await fetch(edgeUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: creds.anonKey,
+          Authorization: `Bearer ${creds.anonKey}`,
+        },
+        body: JSON.stringify({
+          imageUrl,
+          apiKey: customApiKey || undefined,
+        }),
+      });
+
+      if (edgeRes.ok) {
+        const result = await edgeRes.json();
+        if (result && !result.error) {
+          return {
+            name: result.name || 'Unidentified Equipment',
+            category: VALID_CATEGORIES.includes(result.category) ? result.category : 'electronics_av',
+            room: VALID_ROOMS.includes(result.room) ? result.room : 'living_room',
+            dimensions_cm: {
+              length: Math.max(0, Number(result.dimensions_cm?.length) || 0),
+              width: Math.max(0, Number(result.dimensions_cm?.width) || 0),
+              height: Math.max(0, Number(result.dimensions_cm?.height) || 0),
+            },
+            weight_kg: Math.max(0, Number(result.weight_kg) || 0),
+            is_fragile: Boolean(result.is_fragile),
+            disassembly_required: Boolean(result.disassembly_required),
+            decision_status: VALID_DECISIONS.includes(result.decision_status) ? result.decision_status : 'keep_pack',
+            carousell_asking_price: Number(result.carousell_asking_price) > 0 ? Number(result.carousell_asking_price) : undefined,
+            notes: typeof result.notes === 'string' ? result.notes.trim() : '',
+            extractedFields: Array.isArray(result.extractedFields) ? result.extractedFields : ['name', 'category', 'room'],
+            modelUsed: result.modelUsed || 'gemini-3.5-flash-lite (Cloud Edge)',
+          };
+        }
+      }
+    } catch (edgeErr) {
+      console.warn('Edge function movetrack-analyze failed, attempting fallback...', edgeErr);
+    }
+  }
+
+  // 2. Direct client fallback if user configured their own Gemini API key
+  if (!customApiKey) {
     throw new Error(
-      'Gemini API key is not configured. Please set VITE_GEMINI_API_KEY in your .env file.'
+      'Gemini AI auto-fill is currently unavailable. Please enter your Gemini API key in App Settings.'
     );
   }
 
@@ -184,7 +233,7 @@ export async function analyzeEquipmentPhoto(imageUrl: string): Promise<AiItemExt
   let modelUsed = primaryModel;
 
   try {
-    rawResult = await callGeminiApi(primaryModel, apiKey, imageData);
+    rawResult = await callGeminiApiDirect(primaryModel, customApiKey, imageData);
   } catch (primaryError: any) {
     console.warn(
       `Primary model '${primaryModel}' failed. Falling back to '${fallbackModel}'...`,
@@ -192,7 +241,7 @@ export async function analyzeEquipmentPhoto(imageUrl: string): Promise<AiItemExt
     );
     try {
       modelUsed = fallbackModel;
-      rawResult = await callGeminiApi(fallbackModel, apiKey, imageData);
+      rawResult = await callGeminiApiDirect(fallbackModel, customApiKey, imageData);
     } catch (fallbackError: any) {
       console.error(`Fallback model '${fallbackModel}' also failed.`, fallbackError);
       throw new Error(
@@ -201,7 +250,6 @@ export async function analyzeEquipmentPhoto(imageUrl: string): Promise<AiItemExt
     }
   }
 
-  // Validate and sanitize response
   const name =
     typeof rawResult.name === 'string' && rawResult.name.trim()
       ? rawResult.name.trim()
@@ -229,7 +277,6 @@ export async function analyzeEquipmentPhoto(imageUrl: string): Promise<AiItemExt
   const carousell_asking_price = Math.max(0, Number(rawResult.carousell_asking_price) || 0);
   const notes = typeof rawResult.notes === 'string' ? rawResult.notes.trim() : '';
 
-  // Collect the fields populated by AI
   const extractedFields: string[] = [
     'name',
     'category',

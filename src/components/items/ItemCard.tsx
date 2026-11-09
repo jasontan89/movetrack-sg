@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, DecisionStatus, Item } from '../../types';
+import { Box, DecisionStatus, isMovingDecision, Item } from '../../types';
 import {
   AlertTriangle,
   Wrench,
@@ -11,6 +11,7 @@ import {
   HelpCircle,
   Recycle,
   Sparkles,
+  Building2,
 } from 'lucide-react';
 
 interface ItemCardProps {
@@ -23,9 +24,15 @@ export const getDecisionBadge = (status: DecisionStatus, price?: number) => {
   switch (status) {
     case 'keep_pack':
       return {
-        label: 'Keep & Move',
+        label: 'Rental House (Condo)',
         bg: 'bg-emerald-100 text-emerald-800 border-emerald-200',
         icon: <CheckCircle2 size={12} />,
+      };
+    case 'move_hq':
+      return {
+        label: "Mom's House (HQ)",
+        bg: 'bg-indigo-100 text-indigo-800 border-indigo-200',
+        icon: <Building2 size={12} />,
       };
     case 'sell_carousell':
       return {
@@ -60,7 +67,7 @@ export const getDecisionBadge = (status: DecisionStatus, price?: number) => {
     case 'undecided_discuss':
     default:
       return {
-        label: 'Undecided / Review',
+        label: 'To Discuss',
         bg: 'bg-yellow-100 text-yellow-800 border-yellow-200',
         icon: <HelpCircle size={12} />,
       };
@@ -137,7 +144,7 @@ export const ItemCard: React.FC<ItemCardProps> = ({ item, boxes, onClick }) => {
           {/* Original box icon */}
           {item.has_original_box && (
             <span
-              className="absolute bottom-1 right-1 bg-teal-700 text-white rounded px-1 py-0.2 text-[9px] font-bold shadow-sm"
+              className="absolute bottom-1 right-1 bg-teal-700 text-white rounded px-1 py-0.5 text-[9px] font-bold shadow-sm"
               title="Original Box Available"
             >
               BOX
@@ -169,12 +176,19 @@ export const ItemCard: React.FC<ItemCardProps> = ({ item, boxes, onClick }) => {
                 </span>
               )}
 
+              {/* TBC pill for tentative items */}
+              {(item.name.toUpperCase().includes('TBC') || item.notes?.toUpperCase().includes('[TBC]')) && (
+                <span className="text-[10px] font-bold text-amber-800 bg-amber-100 border border-amber-300 px-1.5 py-0.5 rounded-full">
+                  TBC
+                </span>
+              )}
+
               {/* Box assignment */}
               {assignedBox ? (
                 <span className="text-[10px] font-medium text-teal-700 bg-teal-50 border border-teal-200 px-1.5 py-0.5 rounded">
                   Box #{assignedBox.box_number}
                 </span>
-              ) : item.decision_status === 'keep_pack' ? (
+              ) : isMovingDecision(item.decision_status) ? (
                 <span className="text-[10px] text-slate-400 italic">Unboxed</span>
               ) : null}
             </div>

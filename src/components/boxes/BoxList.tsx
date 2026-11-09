@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
 import { useItems } from '../../context/ItemContext';
-import { Box, Item } from '../../types';
+import { useHousehold } from '../../context/HouseholdContext';
+import { Box, getBoxDestinationHouse, isMovingDecision, MoveDestinationScope } from '../../types';
 import {
   Archive,
   QrCode,
   Printer,
   Plus,
   AlertTriangle,
-  Package,
   ChevronRight,
   ScanLine,
 } from 'lucide-react';
@@ -24,8 +24,15 @@ export const BoxList: React.FC<BoxListProps> = ({
   onOpenPrintSheet,
 }) => {
   const { boxes, items, addBox } = useItems();
+  const { household } = useHousehold();
+
+  const getNextBoxNumber = () =>
+    Math.max(0, ...boxes.map((b) => b.box_number || 0)) + 1;
+
+  const [destFilter, setDestFilter] = useState<MoveDestinationScope>('all');
   const [showAddBoxModal, setShowAddBoxModal] = useState(false);
-  const [newBoxNumber, setNewBoxNumber] = useState<number>(boxes.length + 1);
+  const [newBoxNumber, setNewBoxNumber] = useState<number>(() => getNextBoxNumber());
+  const [newTargetHouse, setNewTargetHouse] = useState<'rental_condo' | 'moms_hq'>('rental_condo');
   const [newLabel, setNewLabel] = useState('');
   const [newDestRoom, setNewDestRoom] = useState('Living Room');
   const [isFragile, setIsFragile] = useState(false);
@@ -35,26 +42,57 @@ export const BoxList: React.FC<BoxListProps> = ({
     e.preventDefault();
     if (!newLabel.trim()) return;
 
+    const num = Number(newBoxNumber) || getNextBoxNumber();
+    const housePrefix =
+      newTargetHouse === 'moms_hq' ? "Mom's House (HQ)" : 'Rental Condo';
+    const cleanRoom = newDestRoom
+      .replace(/^(Rental Condo|Condo|Mom's House \(HQ\)|Mom's House|HQ)\s*[—:-]?\s*/i, '')
+      .trim();
+    const formattedDest = `${housePrefix} — ${cleanRoom || 'General'}`;
+
     await addBox({
-      household_id: 'household-bukit-batok-4rm',
-      box_number: Number(newBoxNumber) || boxes.length + 1,
+      household_id: household?.id || 'household-bukit-batok-4rm',
+      box_number: num,
       label: newLabel.trim(),
-      room_destination: newDestRoom,
+      room_destination: formattedDest,
       is_fragile: isFragile,
-      qr_code_id: `MOVETRACK-BB-BOX-${String(newBoxNumber).padStart(2, '0')}`,
+      status: 'packing',
+      qr_code_id: `MOVETRACK-BB-BOX-${String(num).padStart(2, '0')}`,
       notes: notes.trim(),
     });
 
     setNewLabel('');
     setNotes('');
-    setNewBoxNumber(boxes.length + 2);
+    setNewBoxNumber(num + 1);
     setShowAddBoxModal(false);
   };
 
   const totalPackedItems = items.filter((i) => i.box_id).length;
   const totalUnboxedMoving = items.filter(
-    (i) => i.decision_status === 'keep_pack' && !i.box_id
+    (i) => isMovingDecision(i.decision_status) && !i.box_id
   ).length;
+
+  const rentalBoxesCount = boxes.filter(
+    (b) =>
+      getBoxDestinationHouse(
+        b,
+        items.filter((i) => i.box_id === b.id)
+      ) === 'rental_condo'
+  ).length;
+
+  const momsBoxesCount = boxes.filter(
+    (b) =>
+      getBoxDestinationHouse(
+        b,
+        items.filter((i) => i.box_id === b.id)
+      ) === 'moms_hq'
+  ).length;
+
+  const filteredBoxes = boxes.filter((box) => {
+    if (destFilter === 'all') return true;
+    const boxItems = items.filter((i) => i.box_id === box.id);
+    return getBoxDestinationHouse(box, boxItems) === destFilter;
+  });
 
   return (
     <div className="space-y-4 pb-24">
@@ -63,7 +101,7 @@ export const BoxList: React.FC<BoxListProps> = ({
         <div className="flex items-center justify-between">
           <div>
             <span className="text-xs uppercase tracking-wider text-teal-200 font-semibold">
-              Moving Logistics
+              Moving Logistics • 2-House Segregation
             </span>
             <h2 className="text-lg font-bold">Boxes & QR Labeling</h2>
           </div>
@@ -105,17 +143,78 @@ export const BoxList: React.FC<BoxListProps> = ({
         </div>
       </div>
 
-      {/* Box Creation Trigger */}
-      <div className="flex items-center justify-between">
-        <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-          All Moving Boxes ({boxes.length})
-        </h3>
+      {/* Destination House Filter Tabs + New Box Button */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar text-xs">
+          <button
+            onClick={() => setDestFilter('all')}
+            className={`shrink-0 px-3 py-1.5 rounded-xl border font-semibold transition flex items-center gap-1.5 ${
+              destFilter === 'all'
+                ? 'bg-slate-900 text-white border-slate-900 shadow-sm'
+                : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+            }`}
+          >
+            <span>All Boxes</span>
+            <span
+              className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+                destFilter === 'all' ? 'bg-slate-800 text-slate-200' : 'bg-slate-100 text-slate-600'
+              }`}
+            >
+              {boxes.length}
+            </span>
+          </button>
+
+          <button
+            onClick={() =>
+              setDestFilter(destFilter === 'rental_condo' ? 'all' : 'rental_condo')
+            }
+            className={`shrink-0 px-3 py-1.5 rounded-xl border font-semibold transition flex items-center gap-1.5 ${
+              destFilter === 'rental_condo'
+                ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                : 'bg-emerald-50/70 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
+            }`}
+          >
+            <span>🏢 Rental (Condo)</span>
+            <span
+              className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+                destFilter === 'rental_condo'
+                  ? 'bg-emerald-700 text-white'
+                  : 'bg-emerald-100 text-emerald-800'
+              }`}
+            >
+              {rentalBoxesCount}
+            </span>
+          </button>
+
+          <button
+            onClick={() => setDestFilter(destFilter === 'moms_hq' ? 'all' : 'moms_hq')}
+            className={`shrink-0 px-3 py-1.5 rounded-xl border font-semibold transition flex items-center gap-1.5 ${
+              destFilter === 'moms_hq'
+                ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                : 'bg-indigo-50/70 text-indigo-800 border-indigo-200 hover:bg-indigo-100'
+            }`}
+          >
+            <span>🏡 Mom's (HQ)</span>
+            <span
+              className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+                destFilter === 'moms_hq'
+                  ? 'bg-indigo-700 text-white'
+                  : 'bg-indigo-100 text-indigo-800'
+              }`}
+            >
+              {momsBoxesCount}
+            </span>
+          </button>
+        </div>
+
         <button
           onClick={() => {
-            setNewBoxNumber(boxes.length + 1);
+            setNewBoxNumber(getNextBoxNumber());
+            if (destFilter === 'moms_hq') setNewTargetHouse('moms_hq');
+            else setNewTargetHouse('rental_condo');
             setShowAddBoxModal(true);
           }}
-          className="text-xs font-bold text-teal-700 bg-teal-50 hover:bg-teal-100 px-3 py-1.5 rounded-xl border border-teal-200 transition flex items-center gap-1 active:scale-95"
+          className="shrink-0 text-xs font-bold text-teal-700 bg-teal-50 hover:bg-teal-100 px-3 py-1.5 rounded-xl border border-teal-200 transition flex items-center gap-1 active:scale-95"
         >
           <Plus size={14} />
           <span>New Box</span>
@@ -123,15 +222,18 @@ export const BoxList: React.FC<BoxListProps> = ({
       </div>
 
       {/* Boxes Grid */}
-      {boxes.length > 0 ? (
+      {filteredBoxes.length > 0 ? (
         <div className="space-y-2.5">
-          {boxes.map((box) => {
+          {filteredBoxes.map((box) => {
             const boxItems = items.filter((i) => i.box_id === box.id);
             const totalBoxWeight = boxItems.reduce(
               (acc, i) => acc + (Number(i.weight_kg) || 0),
               0
             );
             const hasFragile = box.is_fragile || boxItems.some((i) => i.is_fragile);
+            const boxStatus = box.status || 'packing';
+            const targetHouse = getBoxDestinationHouse(box, boxItems);
+            const isMomsHouse = targetHouse === 'moms_hq';
 
             return (
               <div
@@ -140,12 +242,18 @@ export const BoxList: React.FC<BoxListProps> = ({
                 className="bg-white rounded-2xl border border-slate-200/90 p-3.5 shadow-sm hover:shadow-md hover:border-teal-300 transition-all cursor-pointer flex items-center justify-between gap-3 active:scale-[0.99]"
               >
                 <div className="flex items-center gap-3 min-w-0">
-                  {/* Box Number Icon */}
-                  <div className="w-12 h-12 rounded-xl bg-slate-100 border border-slate-200 flex flex-col items-center justify-center shrink-0 text-slate-800">
-                    <span className="text-[9px] font-bold text-slate-400 uppercase leading-none">
+                  {/* Box Number Icon color-coded by target house */}
+                  <div
+                    className={`w-12 h-12 rounded-xl border flex flex-col items-center justify-center shrink-0 ${
+                      isMomsHouse
+                        ? 'bg-indigo-50 border-indigo-200 text-indigo-900'
+                        : 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                    }`}
+                  >
+                    <span className="text-[9px] font-bold opacity-60 uppercase leading-none">
                       BOX
                     </span>
-                    <span className="text-base font-black leading-tight text-teal-700">
+                    <span className="text-base font-black leading-tight">
                       #{box.box_number}
                     </span>
                   </div>
@@ -153,20 +261,44 @@ export const BoxList: React.FC<BoxListProps> = ({
                   {/* Box Label & Details */}
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5 flex-wrap">
+                      <span
+                        className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${
+                          isMomsHouse
+                            ? 'bg-indigo-100 text-indigo-800 border-indigo-200'
+                            : 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                        }`}
+                      >
+                        {isMomsHouse ? "🏡 Mom's House (HQ)" : '🏢 Rental (Condo)'}
+                      </span>
                       <span className="font-bold text-slate-900 text-sm truncate">
                         {box.label}
                       </span>
+                      <span
+                        className={`text-[9px] font-bold px-1.5 py-0.5 rounded capitalize ${
+                          boxStatus === 'sealed'
+                            ? 'bg-blue-100 text-blue-800'
+                            : boxStatus === 'loaded'
+                            ? 'bg-purple-100 text-purple-800'
+                            : boxStatus === 'delivered'
+                            ? 'bg-amber-100 text-amber-800'
+                            : boxStatus === 'unpacked'
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : 'bg-slate-100 text-slate-600'
+                        }`}
+                      >
+                        {boxStatus}
+                      </span>
                       {hasFragile && (
-                        <span className="text-[9px] font-bold text-red-700 bg-red-50 border border-red-200 px-1.5 py-0.2 rounded flex items-center gap-0.5 shrink-0">
+                        <span className="text-[9px] font-bold text-red-700 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded flex items-center gap-0.5 shrink-0">
                           <AlertTriangle size={9} />
                           FRAGILE
                         </span>
                       )}
                     </div>
 
-                    <div className="flex items-center gap-2 text-xs text-slate-500 mt-1">
+                    <div className="flex items-center gap-2 text-xs text-slate-500 mt-1 flex-wrap">
                       <span className="font-medium text-slate-700">
-                        Destination: {box.room_destination || 'General'}
+                        Room: {box.room_destination || 'General'}
                       </span>
                       <span>•</span>
                       <span>{boxItems.length} items</span>
@@ -190,20 +322,20 @@ export const BoxList: React.FC<BoxListProps> = ({
             <Archive size={24} />
           </div>
           <div>
-            <h4 className="font-bold text-slate-800 text-sm">No moving boxes created</h4>
+            <h4 className="font-bold text-slate-800 text-sm">No moving boxes found</h4>
             <p className="text-xs text-slate-500 mt-1 max-w-xs mx-auto">
-              Create numbered boxes with destination rooms, print QR codes, and pack your items.
+              Create numbered boxes segregated for your New Rental Condo or Mom's House (HQ).
             </p>
           </div>
           <button
             onClick={() => {
-              setNewBoxNumber(1);
+              setNewBoxNumber(getNextBoxNumber());
               setShowAddBoxModal(true);
             }}
             className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-teal-600 text-white text-xs font-semibold hover:bg-teal-700 transition active:scale-95 shadow-sm"
           >
             <Plus size={14} />
-            <span>Create First Box</span>
+            <span>Create Moving Box</span>
           </button>
         </div>
       )}
@@ -222,7 +354,53 @@ export const BoxList: React.FC<BoxListProps> = ({
               </button>
             </div>
 
-            <form onSubmit={handleCreateBox} className="space-y-3 text-xs">
+            <form onSubmit={handleCreateBox} className="space-y-3.5 text-xs">
+              {/* Target Drop-off House Selector */}
+              <div className="space-y-1.5">
+                <label className="font-bold text-slate-800 block">
+                  1. Target Drop-Off House (For Mover Segregation)
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setNewTargetHouse('rental_condo')}
+                    className={`p-2.5 rounded-xl border text-left transition ${
+                      newTargetHouse === 'rental_condo'
+                        ? 'bg-emerald-600 text-white border-emerald-600 font-bold shadow-sm'
+                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    <div className="text-xs font-bold">🏢 New Rental (Condo)</div>
+                    <div
+                      className={`text-[10px] ${
+                        newTargetHouse === 'rental_condo' ? 'text-emerald-100' : 'text-slate-400'
+                      }`}
+                    >
+                      Condo drop-off
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setNewTargetHouse('moms_hq')}
+                    className={`p-2.5 rounded-xl border text-left transition ${
+                      newTargetHouse === 'moms_hq'
+                        ? 'bg-indigo-600 text-white border-indigo-600 font-bold shadow-sm'
+                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    <div className="text-xs font-bold">🏡 Mom's House (HQ)</div>
+                    <div
+                      className={`text-[10px] ${
+                        newTargetHouse === 'moms_hq' ? 'text-indigo-100' : 'text-slate-400'
+                      }`}
+                    >
+                      Mom's / HQ drop-off
+                    </div>
+                  </button>
+                </div>
+              </div>
+
               <div className="grid grid-cols-3 gap-2">
                 <div className="space-y-1">
                   <label className="font-semibold text-slate-700 block">Box #</label>
@@ -236,7 +414,7 @@ export const BoxList: React.FC<BoxListProps> = ({
                 </div>
                 <div className="col-span-2 space-y-1">
                   <label className="font-semibold text-slate-700 block">
-                    Destination Room in New Flat
+                    Target Room at Destination
                   </label>
                   <select
                     value={newDestRoom}
@@ -261,7 +439,7 @@ export const BoxList: React.FC<BoxListProps> = ({
                   required
                   value={newLabel}
                   onChange={(e) => setNewLabel(e.target.value)}
-                  placeholder="e.g. Master Bedroom Fragile Cosmetics & Tech"
+                  placeholder="e.g. Kitchen Glassware & Plates, Study Tech Cables"
                   className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm"
                 />
               </div>

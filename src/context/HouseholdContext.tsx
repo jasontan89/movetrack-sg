@@ -8,6 +8,7 @@ import {
   getSupabaseSession,
   onSupabaseAuthChange,
   signOutSupabase,
+  joinHouseholdRpc,
 } from '../db/supabaseClient';
 
 interface HouseholdContextType {
@@ -20,7 +21,9 @@ interface HouseholdContextType {
   isCloudConfigured: boolean;
   switchUser: (role: 'jason' | 'wife' | 'family') => void;
   updateHouseholdName: (name: string, address: string) => Promise<void>;
+  updateHousehold: (details: Partial<Household>) => Promise<void>;
   updateSecurityPin: (newPin: string) => Promise<void>;
+  joinHousehold: (inviteCode: string, pin: string) => Promise<{ success: boolean; message?: string }>;
   unlockPin: () => void;
   lockHousehold: () => void;
   signOut: () => Promise<void>;
@@ -120,6 +123,11 @@ export const HouseholdProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         }
       }
 
+      // Scrub URL query parameters to avoid exposing tokens/pins in history
+      if (window.location.search) {
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+
       const count = await getOfflineQueueCount();
       setOfflineQueueCount(count);
     }
@@ -160,6 +168,17 @@ export const HouseholdProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
   };
 
+  const updateHousehold = async (details: Partial<Household>) => {
+    if (!household) return;
+    const updated = { ...household, ...details };
+    setHousehold(updated);
+    await saveHousehold(updated);
+
+    if (isOnline) {
+      await saveHouseholdToSupabase(updated);
+    }
+  };
+
   const updateSecurityPin = async (newPin: string) => {
     if (!household) return;
     const updated = { ...household, security_pin: newPin };
@@ -168,6 +187,28 @@ export const HouseholdProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
     if (isOnline) {
       await saveHouseholdToSupabase(updated);
+    }
+  };
+
+  const joinHousehold = async (
+    inviteCode: string,
+    pin: string
+  ): Promise<{ success: boolean; message?: string }> => {
+    try {
+      const res = await joinHouseholdRpc(inviteCode, pin);
+      if (!res.error && res.data) {
+        const joined = await fetchHouseholdFromSupabase(res.data);
+        if (joined) {
+          setHousehold(joined);
+          await saveHousehold(joined);
+        }
+        setIsPinUnlocked(true);
+        localStorage.setItem('movetrack_pin_unlocked', 'true');
+        return { success: true };
+      }
+      return { success: false, message: res.error?.message || 'Invalid invite code or PIN' };
+    } catch (err: any) {
+      return { success: false, message: err.message || 'Error joining household' };
     }
   };
 
@@ -185,6 +226,7 @@ export const HouseholdProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     await signOutSupabase();
     setSession(null);
     lockHousehold();
+    localStorage.removeItem('movetrack_active_user');
   };
 
   const refreshOfflineCount = async () => {
@@ -204,7 +246,9 @@ export const HouseholdProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         isCloudConfigured,
         switchUser,
         updateHouseholdName,
+        updateHousehold,
         updateSecurityPin,
+        joinHousehold,
         unlockPin,
         lockHousehold,
         signOut,

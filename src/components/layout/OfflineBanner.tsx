@@ -1,6 +1,6 @@
 import React from 'react';
 import { useHousehold } from '../../context/HouseholdContext';
-import { WifiOff, Info } from 'lucide-react';
+import { WifiOff } from 'lucide-react';
 
 export const OfflineBanner: React.FC = () => {
   const { isOnline, offlineQueueCount } = useHousehold();

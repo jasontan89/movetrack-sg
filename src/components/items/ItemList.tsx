@@ -1,22 +1,21 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useItems } from '../../context/ItemContext';
 import { useHousehold } from '../../context/HouseholdContext';
-import { ItemCard, formatRoomName } from './ItemCard';
-import { Room, Owner, Item } from '../../types';
+import { ItemCard } from './ItemCard';
+import { Room, Item } from '../../types';
 import {
   Search,
   X,
-  Filter,
   PackagePlus,
   AlertTriangle,
   Wrench,
   PackageOpen,
-  Sparkles,
   UploadCloud,
   Smartphone,
+  Zap,
 } from 'lucide-react';
-import { scanLocalPhoneData } from '../../services/syncService';
 import { PhoneSyncModal } from '../sync/PhoneSyncModal';
+import { QuickBatchAddModal } from './QuickBatchAddModal';
 
 interface ItemListProps {
   onSelectItem: (item: Item) => void;
@@ -36,35 +35,23 @@ const ROOMS: { id: Room | 'all'; label: string }[] = [
 
 export const ItemList: React.FC<ItemListProps> = ({ onSelectItem, onOpenAddModal }) => {
   const { items, boxes, filters, filteredItems, setFilter, resetFilters } = useItems();
-  const { currentUser } = useHousehold();
+  const { offlineQueueCount } = useHousehold();
   const [showSyncModal, setShowSyncModal] = useState(false);
-  const [unsyncedCount, setUnsyncedCount] = useState(0);
-
-  useEffect(() => {
-    const checkUnsynced = async () => {
-      const scan = await scanLocalPhoneData();
-      if (scan.hasUnsyncedData) {
-        setUnsyncedCount(
-          scan.unsyncedItems.length +
-            scan.unsyncedBoxes.length +
-            scan.itemsWithLocalPhotos.length +
-            scan.offlineQueueCount
-        );
-      } else {
-        setUnsyncedCount(0);
-      }
-    };
-    checkUnsynced();
-  }, [items, boxes]);
+  const [showBatchAddModal, setShowBatchAddModal] = useState(false);
 
   const jasonCount = items.filter((i) => i.owner === 'jason').length;
   const wifeCount = items.filter((i) => i.owner === 'wife').length;
   const sharedCount = items.filter((i) => i.owner === 'shared').length;
 
+  const condoCount = items.filter((i) => i.decision_status === 'keep_pack').length;
+  const hqCount = items.filter((i) => i.decision_status === 'move_hq').length;
+  const discussCount = items.filter((i) => i.decision_status === 'undecided_discuss').length;
+  const sellCount = items.filter((i) => i.decision_status === 'sell_carousell').length;
+
   return (
     <div className="space-y-3 pb-24">
       {/* Un-synced Phone Data Alert Banner */}
-      {unsyncedCount > 0 && (
+      {offlineQueueCount > 0 && (
         <div className="bg-gradient-to-r from-amber-500 to-orange-600 rounded-2xl p-3.5 text-white shadow-md flex items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2">
           <div className="flex items-center gap-2.5 min-w-0">
             <div className="w-8 h-8 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
@@ -75,7 +62,7 @@ export const ItemList: React.FC<ItemListProps> = ({ onSelectItem, onOpenAddModal
                 Phone Data Ready to Sync!
               </h4>
               <p className="text-[11px] text-amber-100 mt-0.5 truncate">
-                Found {unsyncedCount} un-synced item(s)/box(es) or photo(s) on this phone.
+                Found {offlineQueueCount} pending offline action(s) on this phone.
               </p>
             </div>
           </div>
@@ -90,6 +77,136 @@ export const ItemList: React.FC<ItemListProps> = ({ onSelectItem, onOpenAddModal
       )}
 
       {showSyncModal && <PhoneSyncModal onClose={() => setShowSyncModal(false)} />}
+      {showBatchAddModal && <QuickBatchAddModal onClose={() => setShowBatchAddModal(false)} />}
+
+      {/* 0. Move Destination Quick Filter Bar (Condo vs HQ vs To Discuss) + Batch Add */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar text-xs">
+          <button
+            onClick={() => setFilter('decision', 'all')}
+            className={`shrink-0 px-3 py-1.5 rounded-xl border transition font-semibold flex items-center gap-1.5 ${
+              filters.decision === 'all'
+                ? 'bg-slate-900 text-white border-slate-900 shadow-sm'
+                : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+            }`}
+          >
+            <span>All Lists</span>
+            <span
+              className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+                filters.decision === 'all' ? 'bg-slate-800 text-slate-200' : 'bg-slate-100 text-slate-500'
+              }`}
+            >
+              {items.length}
+            </span>
+          </button>
+
+          <button
+            onClick={() =>
+              setFilter('decision', filters.decision === 'keep_pack' ? 'all' : 'keep_pack')
+            }
+            className={`shrink-0 px-3 py-1.5 rounded-xl border transition font-semibold flex items-center gap-1.5 ${
+              filters.decision === 'keep_pack'
+                ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                : 'bg-emerald-50/70 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
+            }`}
+          >
+            <span>🏢 Rental (Condo)</span>
+            <span
+              className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+                filters.decision === 'keep_pack'
+                  ? 'bg-emerald-700 text-white'
+                  : 'bg-emerald-100 text-emerald-800'
+              }`}
+            >
+              {condoCount}
+            </span>
+          </button>
+
+          <button
+            onClick={() =>
+              setFilter('decision', filters.decision === 'move_hq' ? 'all' : 'move_hq')
+            }
+            className={`shrink-0 px-3 py-1.5 rounded-xl border transition font-semibold flex items-center gap-1.5 ${
+              filters.decision === 'move_hq'
+                ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                : 'bg-indigo-50/70 text-indigo-800 border-indigo-200 hover:bg-indigo-100'
+            }`}
+          >
+            <span>🏡 Mom's (HQ)</span>
+            <span
+              className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+                filters.decision === 'move_hq'
+                  ? 'bg-indigo-700 text-white'
+                  : 'bg-indigo-100 text-indigo-800'
+              }`}
+            >
+              {hqCount}
+            </span>
+          </button>
+
+          <button
+            onClick={() =>
+              setFilter(
+                'decision',
+                filters.decision === 'undecided_discuss' ? 'all' : 'undecided_discuss'
+              )
+            }
+            className={`shrink-0 px-3 py-1.5 rounded-xl border transition font-semibold flex items-center gap-1.5 ${
+              filters.decision === 'undecided_discuss'
+                ? 'bg-yellow-500 text-white border-yellow-500 shadow-sm'
+                : 'bg-yellow-50/70 text-yellow-800 border-yellow-200 hover:bg-yellow-100'
+            }`}
+          >
+            <span>🤔 To Discuss</span>
+            <span
+              className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+                filters.decision === 'undecided_discuss'
+                  ? 'bg-yellow-600 text-white'
+                  : 'bg-yellow-100 text-yellow-800'
+              }`}
+            >
+              {discussCount}
+            </span>
+          </button>
+
+          {sellCount > 0 && (
+            <button
+              onClick={() =>
+                setFilter(
+                  'decision',
+                  filters.decision === 'sell_carousell' ? 'all' : 'sell_carousell'
+                )
+              }
+              className={`shrink-0 px-3 py-1.5 rounded-xl border transition font-semibold flex items-center gap-1.5 ${
+                filters.decision === 'sell_carousell'
+                  ? 'bg-orange-500 text-white border-orange-500 shadow-sm'
+                  : 'bg-orange-50/70 text-orange-800 border-orange-200 hover:bg-orange-100'
+              }`}
+            >
+              <span>🏷️ Sell</span>
+              <span
+                className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+                  filters.decision === 'sell_carousell'
+                    ? 'bg-orange-600 text-white'
+                    : 'bg-orange-100 text-orange-800'
+                }`}
+              >
+                {sellCount}
+              </span>
+            </button>
+          )}
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setShowBatchAddModal(true)}
+          className="shrink-0 px-3 py-1.5 rounded-xl bg-teal-600 text-white text-xs font-bold hover:bg-teal-700 transition shadow-sm flex items-center gap-1 active:scale-95"
+          title="Quickly paste or type multiple items into Condo, HQ, or To Discuss list"
+        >
+          <Zap size={13} />
+          <span>Batch Add</span>
+        </button>
+      </div>
       {/* 1. Owner Quick Filter Tabs */}
       <div className="bg-slate-100 p-1 rounded-xl flex items-center gap-1 text-xs font-medium">
         <button
@@ -143,24 +260,59 @@ export const ItemList: React.FC<ItemListProps> = ({ onSelectItem, onOpenAddModal
         </button>
       </div>
 
-      {/* 2. Search Bar */}
-      <div className="relative">
-        <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-        <input
-          type="text"
-          value={filters.searchQuery}
-          onChange={(e) => setFilter('searchQuery', e.target.value)}
-          placeholder="Search electronics, monitors, boxes, notes..."
-          className="w-full pl-9 pr-9 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 shadow-sm"
-        />
-        {filters.searchQuery && (
-          <button
-            onClick={() => setFilter('searchQuery', '')}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+      {/* 2. Search & Category / Sort Controls */}
+      <div className="space-y-2">
+        <div className="relative">
+          <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            type="text"
+            value={filters.searchQuery}
+            onChange={(e) => setFilter('searchQuery', e.target.value)}
+            placeholder="Search electronics, monitors, boxes, notes..."
+            className="w-full pl-9 pr-9 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 shadow-sm"
+          />
+          {filters.searchQuery && (
+            <button
+              onClick={() => setFilter('searchQuery', '')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+            >
+              <X size={16} />
+            </button>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2">
+          <select
+            value={filters.category}
+            onChange={(e) => setFilter('category', e.target.value as any)}
+            className="flex-1 px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-700 font-medium focus:ring-2 focus:ring-teal-500 shadow-sm"
           >
-            <X size={16} />
-          </button>
-        )}
+            <option value="all">All Categories</option>
+            <option value="electronics_av">Electronics & AV</option>
+            <option value="computer_office">Computer & Tech Gear</option>
+            <option value="appliances">Home Appliances</option>
+            <option value="furniture">Furniture</option>
+            <option value="kitchenware">Kitchenware</option>
+            <option value="tools_hardware">Tools & Hardware</option>
+            <option value="personal_keepsakes">Personal & Keepsakes</option>
+            <option value="clothing_bedding">Clothing & Bedding</option>
+            <option value="books_documents">Books & Documents</option>
+            <option value="other">Other</option>
+          </select>
+
+          <select
+            value={filters.sortBy || 'date_desc'}
+            onChange={(e) => setFilter('sortBy', e.target.value as any)}
+            className="px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-700 font-medium focus:ring-2 focus:ring-teal-500 shadow-sm"
+          >
+            <option value="date_desc">Newest Added</option>
+            <option value="date_asc">Oldest Added</option>
+            <option value="name_asc">Name (A-Z)</option>
+            <option value="weight_desc">Heaviest First</option>
+            <option value="cbm_desc">Largest CBM (Volume)</option>
+            <option value="price_desc">Highest Price</option>
+          </select>
+        </div>
       </div>
 
       {/* 3. Horizontal Room Filter Scroll */}
@@ -184,7 +336,7 @@ export const ItemList: React.FC<ItemListProps> = ({ onSelectItem, onOpenAddModal
             >
               <span>{room.label}</span>
               <span
-                className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                className={`text-[10px] px-1.5 py-0.5 rounded-full ${
                   isSelected ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-500'
                 }`}
               >
@@ -238,6 +390,8 @@ export const ItemList: React.FC<ItemListProps> = ({ onSelectItem, onOpenAddModal
         {(filters.onlyFragile ||
           filters.needsDisassembly ||
           filters.boxId !== 'all' ||
+          filters.decision !== 'all' ||
+          filters.category !== 'all' ||
           filters.room !== 'all' ||
           filters.owner !== 'all' ||
           filters.searchQuery) && (

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useHousehold } from '../../context/HouseholdContext';
 import { useItems } from '../../context/ItemContext';
 import {
@@ -21,15 +21,17 @@ import {
   Trash2,
   Smartphone,
   UploadCloud,
+  Calendar,
 } from 'lucide-react';
 import { PhoneSyncModal } from '../sync/PhoneSyncModal';
+import { importBackupToStorage } from '../../services/syncService';
 
 interface SettingsModalProps {
   onClose: () => void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
-  const { household, updateHouseholdName } = useHousehold();
+  const { household, updateHousehold, updateSecurityPin } = useHousehold();
   const { items, boxes, resetAllData, reloadAll } = useItems();
 
   const creds = getSupabaseCredentials();
@@ -41,13 +43,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
   const [saveStatus, setSaveStatus] = useState<string>('');
   const [copiedSchema, setCopiedSchema] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Household state
   const [householdName, setHouseholdName] = useState(household?.name || '');
   const [address, setAddress] = useState(household?.address || '');
+  const [destinationAddress, setDestinationAddress] = useState(household?.destination_address || '');
+  const [moveDate, setMoveDate] = useState(household?.move_date || '');
   const [securityPin, setSecurityPin] = useState(household?.security_pin || '884488');
   const [showPhoneSyncModal, setShowPhoneSyncModal] = useState(false);
-  const { updateSecurityPin } = useHousehold();
 
   const handleSaveSupabase = (e: React.FormEvent) => {
     e.preventDefault();
@@ -64,7 +69,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
 
   const handleSaveHouseholdInfo = async () => {
     if (householdName.trim()) {
-      await updateHouseholdName(householdName.trim(), address.trim());
+      await updateHousehold({
+        name: householdName.trim(),
+        address: address.trim(),
+        destination_address: destinationAddress.trim(),
+        move_date: moveDate,
+      });
       if (securityPin.trim() && securityPin.length === 6) {
         await updateSecurityPin(securityPin.trim());
       }
@@ -102,6 +112,27 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const handleImportJsonFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsImporting(true);
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const result = await importBackupToStorage(parsed);
+      await reloadAll();
+      setSaveStatus(`Imported successfully! (${result.itemsCount} items, ${result.boxesCount} boxes)`);
+      setTimeout(() => setSaveStatus(''), 3500);
+    } catch (err: any) {
+      console.error('Import error:', err);
+      alert('Failed to parse and import JSON backup: ' + (err.message || 'Invalid format'));
+    } finally {
+      setIsImporting(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
   };
 
   const handleResetSample = async () => {
@@ -165,6 +196,28 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
                   type="text"
                   value={address}
                   onChange={(e) => setAddress(e.target.value)}
+                  placeholder="e.g. Blk 288 Bukit Batok St 25"
+                  className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] text-slate-500 block mb-0.5">
+                  New Flat / Destination Address
+                </label>
+                <input
+                  type="text"
+                  value={destinationAddress}
+                  onChange={(e) => setDestinationAddress(e.target.value)}
+                  placeholder="e.g. Blk 460B Bukit Batok West Ave 9"
+                  className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] text-slate-500 block mb-0.5">Target Move Date</label>
+                <input
+                  type="date"
+                  value={moveDate}
+                  onChange={(e) => setMoveDate(e.target.value)}
                   className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs"
                 />
               </div>
@@ -314,34 +367,50 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
           {/* Data Backup & Clear */}
           <div className="space-y-2 pt-2 border-t border-slate-200">
             <span className="font-bold text-slate-800 block">Backup & Clear</span>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               <button
                 onClick={handleExportJson}
-                className="p-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 transition flex items-center justify-center gap-1.5 font-semibold text-slate-700 text-xs"
+                className="p-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 transition flex items-center justify-center gap-1 font-semibold text-slate-700 text-xs"
               >
-                <Download size={14} />
-                <span>Export JSON</span>
+                <Download size={13} />
+                <span>Export</span>
               </button>
+
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isImporting}
+                className="p-2.5 rounded-xl border border-teal-200 bg-teal-50 hover:bg-teal-100 transition flex items-center justify-center gap-1 font-semibold text-teal-800 text-xs"
+              >
+                <Upload size={13} />
+                <span>{isImporting ? 'Importing...' : 'Import JSON'}</span>
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".json"
+                onChange={handleImportJsonFile}
+                className="hidden"
+              />
 
               {confirmReset ? (
                 <button
                   onClick={handleResetSample}
                   className="p-2.5 rounded-xl bg-red-600 text-white font-bold hover:bg-red-700 transition text-[11px]"
                 >
-                  Confirm Purge All
+                  Confirm
                 </button>
               ) : (
                 <button
                   onClick={() => setConfirmReset(true)}
-                  className="p-2.5 rounded-xl border border-red-200 bg-red-50 hover:bg-red-100 text-red-700 transition flex items-center justify-center gap-1.5 font-semibold text-[11px]"
+                  className="p-2.5 rounded-xl border border-red-200 bg-red-50 hover:bg-red-100 text-red-700 transition flex items-center justify-center gap-1 font-semibold text-[11px]"
                 >
                   <Trash2 size={13} />
-                  <span>Purge All Records</span>
+                  <span>Purge All</span>
                 </button>
               )}
             </div>
             <p className="text-[10px] text-slate-400">
-              Permanently purges all items and boxes from local storage and connected Supabase cloud database.
+              Export/import full JSON backups across devices. Purge permanently clears local storage and Supabase.
             </p>
           </div>
         </div>

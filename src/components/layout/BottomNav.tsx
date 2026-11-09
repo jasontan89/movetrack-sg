@@ -65,7 +65,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
         <div className="relative -top-5 flex justify-center">
           <button
             onClick={onOpenAddModal}
-            className="w-13 h-13 rounded-full bg-gradient-to-r from-teal-500 to-emerald-600 text-white flex items-center justify-center shadow-lg shadow-teal-500/35 border-4 border-slate-50 transition active:scale-90 hover:brightness-105"
+            className="w-14 h-14 rounded-full bg-gradient-to-r from-teal-500 to-emerald-600 text-white flex items-center justify-center shadow-lg shadow-teal-500/35 border-4 border-slate-50 transition active:scale-90 hover:brightness-105"
             title="Add Item or Snap Photo"
           >
             <Plus size={28} strokeWidth={2.5} />

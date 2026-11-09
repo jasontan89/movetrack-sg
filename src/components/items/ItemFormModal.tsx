@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { useItems } from '../../context/ItemContext';
 import { useHousehold } from '../../context/HouseholdContext';
-import { Box, Category, DecisionStatus, Item, Owner, Room } from '../../types';
+import { Category, DecisionStatus, isMovingDecision, Item, Owner, Room } from '../../types';
 import { ITEM_PRESETS, ItemPreset } from '../../utils/presetItems';
 import { compressPhoto } from '../../utils/imageCompressor';
 import { calculateCbm } from '../../utils/cbmCalculator';
@@ -14,7 +14,6 @@ import {
   Wrench,
   Package,
   Cable,
-  DollarSign,
   Sparkles,
   Loader2,
   Trash2,
@@ -76,6 +75,9 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
   const [boxId, setBoxId] = useState<string>(initialItem?.box_id || '');
   const [carousellPrice, setCarousellPrice] = useState<string>(
     initialItem?.carousell_details?.asking_price ? String(initialItem.carousell_details.asking_price) : ''
+  );
+  const [carousellSoldPrice, setCarousellSoldPrice] = useState<string>(
+    initialItem?.carousell_details?.sold_price ? String(initialItem.carousell_details.sold_price) : ''
   );
   const [carousellUrl, setCarousellUrl] = useState<string>(
     initialItem?.carousell_details?.listing_url || ''
@@ -211,6 +213,29 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
     height: Number(height) || 0,
   });
 
+  const handleCreateQuickBox = async () => {
+    const nextNum = Math.max(0, ...boxes.map((b) => b.box_number || 0)) + 1;
+    const housePrefix = decision === 'move_hq' ? "Mom's House (HQ)" : 'Rental Condo';
+    const destRoomName =
+      room === 'living_room'
+        ? `${housePrefix} — Living Room`
+        : room === 'master_bedroom'
+        ? `${housePrefix} — Master Bedroom`
+        : room === 'kitchen'
+        ? `${housePrefix} — Kitchen`
+        : `${housePrefix} — General`;
+
+    const createdBox = await addBox({
+      household_id: household?.id || 'household-bukit-batok-4rm',
+      box_number: nextNum,
+      label: `${name ? name.slice(0, 15) : 'New'} Box (${decision === 'move_hq' ? "Mom's/HQ" : 'Rental'})`,
+      room_destination: destRoomName,
+      is_fragile: isFragile,
+      qr_code_id: `MOVETRACK-BB-BOX-${String(nextNum).padStart(2, '0')}`,
+    });
+    setBoxId(createdBox.id);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
@@ -236,11 +261,12 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
         has_original_box: hasOriginalBox,
         has_cables_accessories: hasCables,
         decision_status: decision,
-        box_id: boxId || null,
+        box_id: isMovingDecision(decision) ? (boxId || null) : null,
         carousell_details:
           decision === 'sell_carousell' || carousellPrice
             ? {
                 asking_price: Number(carousellPrice) || 0,
+                sold_price: carousellStatus === 'sold' && carousellSoldPrice ? Number(carousellSoldPrice) : undefined,
                 listing_url: carousellUrl.trim(),
                 status: carousellStatus,
               }
@@ -578,11 +604,32 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
                     : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
                 }`}
               >
-                <span className="text-base">📦</span>
+                <span className="text-base">🏢</span>
                 <div>
-                  <div className="font-semibold text-xs">Keep & Move</div>
+                  <div className="font-semibold text-xs">Rental House (Condo)</div>
                   <div className={`text-[10px] ${decision === 'keep_pack' ? 'text-emerald-100' : 'text-slate-400'}`}>
-                    Pack for new flat
+                    Move to new Rental
+                  </div>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setDecision('move_hq');
+                  markFieldAmended('decision_status');
+                }}
+                className={`p-2 rounded-xl border text-left flex items-center gap-2 transition ${
+                  decision === 'move_hq'
+                    ? 'bg-indigo-600 text-white border-indigo-600 font-bold shadow-sm'
+                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                }`}
+              >
+                <span className="text-base">🏡</span>
+                <div>
+                  <div className="font-semibold text-xs">Mom's House (HQ)</div>
+                  <div className={`text-[10px] ${decision === 'move_hq' ? 'text-indigo-100' : 'text-slate-400'}`}>
+                    Move to Mom's / HQ
                   </div>
                 </div>
               </button>
@@ -674,6 +721,27 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
               <button
                 type="button"
                 onClick={() => {
+                  setDecision('discard_trash');
+                  markFieldAmended('decision_status');
+                }}
+                className={`p-2 rounded-xl border text-left flex items-center gap-2 transition ${
+                  decision === 'discard_trash'
+                    ? 'bg-slate-700 text-white border-slate-700 font-bold shadow-sm'
+                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                }`}
+              >
+                <span className="text-base">🗑️</span>
+                <div>
+                  <div className="font-semibold text-xs">General Trash</div>
+                  <div className={`text-[10px] ${decision === 'discard_trash' ? 'text-slate-200' : 'text-slate-400'}`}>
+                    Chute / Bin centre
+                  </div>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
                   setDecision('undecided_discuss');
                   markFieldAmended('decision_status');
                 }}
@@ -685,9 +753,9 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
               >
                 <span className="text-base">🤔</span>
                 <div>
-                  <div className="font-semibold text-xs">Undecided</div>
+                  <div className="font-semibold text-xs">To Discuss</div>
                   <div className={`text-[10px] ${decision === 'undecided_discuss' ? 'text-yellow-100' : 'text-slate-400'}`}>
-                    Discuss with spouse
+                    Discuss destination
                   </div>
                 </div>
               </button>
@@ -695,43 +763,78 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
 
             {/* Carousell Pricing Inputs */}
             {decision === 'sell_carousell' && (
-              <div className="mt-3 pt-3 border-t border-slate-200 grid grid-cols-2 gap-2">
-                <div>
-                  <div className="flex items-center justify-between">
-                    <label className="text-[11px] font-semibold text-slate-600 block">
-                      Asking Price (SGD)
-                    </label>
-                    {renderAiBadge('carousell_price')}
+              <div className="mt-3 pt-3 border-t border-slate-200 space-y-2.5">
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] font-semibold text-slate-600 block">
+                        Asking Price (SGD)
+                      </label>
+                      {renderAiBadge('carousell_price')}
+                    </div>
+                    <div className="relative mt-1">
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs">
+                        $
+                      </span>
+                      <input
+                        type="number"
+                        value={carousellPrice}
+                        onChange={(e) => {
+                          setCarousellPrice(e.target.value);
+                          markFieldAmended('carousell_price');
+                        }}
+                        placeholder="e.g. 150"
+                        className="w-full pl-6 pr-2 py-1.5 bg-white border border-slate-200 rounded-lg text-xs"
+                      />
+                    </div>
                   </div>
-                  <div className="relative mt-1">
-                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs">
-                      $
-                    </span>
-                    <input
-                      type="number"
-                      value={carousellPrice}
-                      onChange={(e) => {
-                        setCarousellPrice(e.target.value);
-                        markFieldAmended('carousell_price');
-                      }}
-                      placeholder="e.g. 150"
-                      className="w-full pl-6 pr-2 py-1.5 bg-white border border-slate-200 rounded-lg text-xs"
-                    />
+
+                  <div>
+                    <label className="text-[11px] font-semibold text-slate-600 block">Status</label>
+                    <select
+                      value={carousellStatus}
+                      onChange={(e) => setCarousellStatus(e.target.value as any)}
+                      className="w-full mt-1 px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-xs"
+                    >
+                      <option value="draft">Draft (Not listed)</option>
+                      <option value="listed">Active on Carousell</option>
+                      <option value="reserved">Reserved</option>
+                      <option value="sold">Sold</option>
+                    </select>
                   </div>
                 </div>
 
+                {carousellStatus === 'sold' && (
+                  <div>
+                    <label className="text-[11px] font-semibold text-slate-600 block">
+                      Actual Sold Price (SGD)
+                    </label>
+                    <div className="relative mt-1">
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs">
+                        $
+                      </span>
+                      <input
+                        type="number"
+                        value={carousellSoldPrice}
+                        onChange={(e) => setCarousellSoldPrice(e.target.value)}
+                        placeholder="e.g. 130"
+                        className="w-full pl-6 pr-2 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-emerald-700"
+                      />
+                    </div>
+                  </div>
+                )}
+
                 <div>
-                  <label className="text-[11px] font-semibold text-slate-600 block">Status</label>
-                  <select
-                    value={carousellStatus}
-                    onChange={(e) => setCarousellStatus(e.target.value as any)}
-                    className="w-full mt-1 px-2 py-1.5 bg-white border border-slate-200 rounded-lg text-xs"
-                  >
-                    <option value="draft">Draft (Not listed)</option>
-                    <option value="listed">Active on Carousell</option>
-                    <option value="reserved">Reserved</option>
-                    <option value="sold">Sold</option>
-                  </select>
+                  <label className="text-[11px] font-semibold text-slate-600 block">
+                    Carousell Listing URL (Optional)
+                  </label>
+                  <input
+                    type="url"
+                    value={carousellUrl}
+                    onChange={(e) => setCarousellUrl(e.target.value)}
+                    placeholder="https://carousell.app.link/..."
+                    className="w-full mt-1 px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs"
+                  />
                 </div>
               </div>
             )}
@@ -890,12 +993,22 @@ export const ItemFormModal: React.FC<ItemFormModalProps> = ({
             </button>
           </div>
 
-          {/* Box Assignment (Only if Keep & Move) */}
-          {decision === 'keep_pack' && (
+          {/* Box Assignment (Only if Moving to Condo or HQ) */}
+          {isMovingDecision(decision) && (
             <div className="space-y-1">
-              <label className="text-xs font-semibold text-slate-700 block">
-                Assign to Moving Box (Optional)
-              </label>
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-slate-700 block">
+                  Assign to Moving Box (Optional)
+                </label>
+                <button
+                  type="button"
+                  onClick={handleCreateQuickBox}
+                  className="text-[11px] font-bold text-teal-700 hover:text-teal-800 flex items-center gap-1 active:scale-95"
+                >
+                  <Plus size={12} />
+                  <span>New Box</span>
+                </button>
+              </div>
               <select
                 value={boxId}
                 onChange={(e) => setBoxId(e.target.value)}

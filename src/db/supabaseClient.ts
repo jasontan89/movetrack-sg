@@ -123,16 +123,40 @@ export async function uploadBase64PhotoToSupabase(
 }
 
 
+// Delete a photo from Supabase Storage bucket 'movetrack-photos'
+export async function deletePhotoFromSupabase(photoUrl: string): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client || !photoUrl) return false;
+
+  try {
+    const bucketMarker = '/movetrack-photos/';
+    const idx = photoUrl.indexOf(bucketMarker);
+    if (idx === -1) return false;
+    const path = photoUrl.substring(idx + bucketMarker.length);
+    const { error } = await client.storage.from('movetrack-photos').remove([path]);
+    return !error;
+  } catch (err) {
+    console.warn('Failed to delete photo from Supabase storage:', err);
+    return false;
+  }
+}
+
 // Fetch all items from Supabase movetrack_items
-export async function fetchItemsFromSupabase(): Promise<Item[] | null> {
+export async function fetchItemsFromSupabase(householdId?: string): Promise<Item[] | null> {
   const client = getSupabaseClient();
   if (!client) return null;
 
   try {
-    const { data, error } = await client
+    let query = client
       .from('movetrack_items')
       .select('*')
       .order('created_at', { ascending: false });
+
+    if (householdId) {
+      query = query.eq('household_id', householdId);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       console.error('Error fetching items from Supabase:', error);
@@ -146,15 +170,21 @@ export async function fetchItemsFromSupabase(): Promise<Item[] | null> {
 }
 
 // Fetch all boxes from Supabase movetrack_boxes
-export async function fetchBoxesFromSupabase(): Promise<Box[] | null> {
+export async function fetchBoxesFromSupabase(householdId?: string): Promise<Box[] | null> {
   const client = getSupabaseClient();
   if (!client) return null;
 
   try {
-    const { data, error } = await client
+    let query = client
       .from('movetrack_boxes')
       .select('*')
       .order('box_number', { ascending: true });
+
+    if (householdId) {
+      query = query.eq('household_id', householdId);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       console.error('Error fetching boxes from Supabase:', error);
@@ -168,22 +198,22 @@ export async function fetchBoxesFromSupabase(): Promise<Box[] | null> {
 }
 
 // Fetch household from Supabase movetrack_households
-export async function fetchHouseholdFromSupabase(): Promise<Household | null> {
+export async function fetchHouseholdFromSupabase(householdId?: string): Promise<Household | null> {
   const client = getSupabaseClient();
   if (!client) return null;
 
   try {
-    const { data, error } = await client
-      .from('movetrack_households')
-      .select('*')
-      .limit(1)
-      .single();
+    let query = client.from('movetrack_households').select('*');
+    if (householdId) {
+      query = query.eq('id', householdId);
+    }
+    const { data, error } = await query.limit(1).maybeSingle();
 
     if (error) {
       console.error('Error fetching household from Supabase:', error);
       return null;
     }
-    return data as Household;
+    return data as Household | null;
   } catch (e) {
     console.error('Supabase household fetch exception:', e);
     return null;
@@ -282,16 +312,24 @@ export async function saveHouseholdToSupabase(household: Household): Promise<boo
   }
 }
 
-// Purge all items and boxes from Supabase tables
-export async function purgeAllFromSupabase(): Promise<boolean> {
+// Purge all items and boxes for a given household from Supabase tables
+export async function purgeAllFromSupabase(householdId?: string): Promise<boolean> {
   const client = getSupabaseClient();
   if (!client) return false;
 
   try {
-    const [resItems, resBoxes] = await Promise.all([
-      client.from('movetrack_items').delete().neq('id', '0'),
-      client.from('movetrack_boxes').delete().neq('id', '0'),
-    ]);
+    let itemsQuery = client.from('movetrack_items').delete();
+    let boxesQuery = client.from('movetrack_boxes').delete();
+
+    if (householdId) {
+      itemsQuery = itemsQuery.eq('household_id', householdId);
+      boxesQuery = boxesQuery.eq('household_id', householdId);
+    } else {
+      itemsQuery = itemsQuery.neq('id', '0');
+      boxesQuery = boxesQuery.neq('id', '0');
+    }
+
+    const [resItems, resBoxes] = await Promise.all([itemsQuery, boxesQuery]);
     return !resItems.error && !resBoxes.error;
   } catch (err) {
     console.error('Exception purging Supabase items/boxes:', err);
@@ -299,25 +337,42 @@ export async function purgeAllFromSupabase(): Promise<boolean> {
   }
 }
 
-
-// Real-time listener subscription
+// Real-time listener subscription with household scoping
 export function subscribeToSupabaseChanges(
   onItemChange: (payload: any) => void,
-  onBoxChange: (payload: any) => void
+  onBoxChange: (payload: any) => void,
+  householdId?: string
 ) {
   const client = getSupabaseClient();
   if (!client) return () => {};
 
+  const channelName = householdId
+    ? `movetrack-realtime-${householdId}`
+    : 'movetrack-realtime-channel';
+
+  const itemsFilter = householdId ? `household_id=eq.${householdId}` : undefined;
+  const boxesFilter = householdId ? `household_id=eq.${householdId}` : undefined;
+
   const channel = client
-    .channel('movetrack-realtime-channel')
+    .channel(channelName)
     .on(
       'postgres_changes',
-      { event: '*', schema: 'public', table: 'movetrack_items' },
+      {
+        event: '*',
+        schema: 'public',
+        table: 'movetrack_items',
+        filter: itemsFilter,
+      },
       onItemChange
     )
     .on(
       'postgres_changes',
-      { event: '*', schema: 'public', table: 'movetrack_boxes' },
+      {
+        event: '*',
+        schema: 'public',
+        table: 'movetrack_boxes',
+        filter: boxesFilter,
+      },
       onBoxChange
     )
     .subscribe();
@@ -325,6 +380,20 @@ export function subscribeToSupabaseChanges(
   return () => {
     client.removeChannel(channel);
   };
+}
+
+// Supabase Auth RPC to join household by invite code & optional PIN
+export async function joinHouseholdRpc(
+  inviteCode: string,
+  securityPin?: string
+): Promise<{ data: string | null; error: any }> {
+  const client = getSupabaseClient();
+  if (!client) return { data: null, error: new Error('Supabase client not configured') };
+  const { data, error } = await client.rpc('join_movetrack_household', {
+    p_invite_code: inviteCode,
+    p_security_pin: securityPin || null,
+  });
+  return { data, error };
 }
 
 // Supabase Auth Methods
@@ -384,15 +453,25 @@ export function onSupabaseAuthChange(callback: (session: any) => void) {
   };
 }
 
-export const SUPABASE_SQL_SCHEMA = `-- MoveTrack SG Database Schema (PostgreSQL / Supabase)
--- Created in project lekqqpjjqksixzacbtqz
+export const SUPABASE_SQL_SCHEMA = `-- MoveTrack SG Complete Database Schema (PostgreSQL / Supabase)
 
 CREATE TABLE IF NOT EXISTS public.movetrack_households (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   address TEXT,
+  destination_address TEXT,
+  move_date DATE,
   invite_code TEXT NOT NULL,
+  security_pin TEXT DEFAULT '123456',
   created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.movetrack_household_members (
+  household_id TEXT NOT NULL REFERENCES public.movetrack_households(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  role TEXT NOT NULL DEFAULT 'member',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  PRIMARY KEY (household_id, user_id)
 );
 
 CREATE TABLE IF NOT EXISTS public.movetrack_boxes (
@@ -402,6 +481,7 @@ CREATE TABLE IF NOT EXISTS public.movetrack_boxes (
   label TEXT NOT NULL,
   room_destination TEXT,
   is_fragile BOOLEAN DEFAULT false,
+  status TEXT DEFAULT 'packing',
   qr_code_id TEXT NOT NULL,
   notes TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
@@ -426,15 +506,24 @@ CREATE TABLE IF NOT EXISTS public.movetrack_items (
   box_id TEXT REFERENCES public.movetrack_boxes(id) ON DELETE SET NULL,
   carousell_details JSONB DEFAULT '{}'::jsonb,
   notes TEXT,
+  ai_generated_fields JSONB DEFAULT '[]'::jsonb,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Performance covering indexes
+CREATE INDEX IF NOT EXISTS idx_movetrack_boxes_household ON public.movetrack_boxes(household_id);
+CREATE INDEX IF NOT EXISTS idx_movetrack_items_household ON public.movetrack_items(household_id);
+CREATE INDEX IF NOT EXISTS idx_movetrack_items_box ON public.movetrack_items(box_id);
+CREATE INDEX IF NOT EXISTS idx_movetrack_members_user ON public.movetrack_household_members(user_id);
+
 ALTER TABLE public.movetrack_households ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.movetrack_household_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.movetrack_boxes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.movetrack_items ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Allow public access to movetrack_households" ON public.movetrack_households FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow public access to movetrack_boxes" ON public.movetrack_boxes FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Allow public access to movetrack_items" ON public.movetrack_items FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow members and anon household access" ON public.movetrack_households FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow members and anon boxes access" ON public.movetrack_boxes FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow members and anon items access" ON public.movetrack_items FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Members view own memberships" ON public.movetrack_household_members FOR SELECT TO authenticated USING (user_id = (SELECT auth.uid()));
 `;

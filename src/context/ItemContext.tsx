@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { Box, FilterOptions, Item } from '../types';
+import { Box, FilterOptions, isMovingDecision, Item } from '../types';
 import {
   getAllBoxes,
   getAllItems,
@@ -18,12 +18,14 @@ import {
   deleteItemFromSupabase,
   saveBoxToSupabase,
   deleteBoxFromSupabase,
+  deletePhotoFromSupabase,
   uploadBase64PhotoToSupabase,
   purgeAllFromSupabase,
   subscribeToSupabaseChanges,
   getSupabaseCredentials,
 } from '../db/supabaseClient';
 import { calculateCbm } from '../utils/cbmCalculator';
+import { processOfflineQueue } from '../services/syncService';
 import { useHousehold } from './HouseholdContext';
 
 interface ItemContextType {
@@ -53,12 +55,13 @@ const DEFAULT_FILTERS: FilterOptions = {
   boxId: 'all',
   onlyFragile: false,
   needsDisassembly: false,
+  sortBy: 'date_desc',
 };
 
 const ItemContext = createContext<ItemContextType | undefined>(undefined);
 
 export const ItemProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { isOnline, refreshOfflineCount } = useHousehold();
+  const { isOnline, refreshOfflineCount, household } = useHousehold();
   const [items, setItems] = useState<Item[]>([]);
   const [boxes, setBoxes] = useState<Box[]>([]);
   const [filters, setFilters] = useState<FilterOptions>(DEFAULT_FILTERS);
@@ -70,10 +73,19 @@ export const ItemProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const creds = getSupabaseCredentials();
 
       if (creds.isConfigured && isOnline) {
+        // Replay offline queue first before refreshing from Supabase
+        try {
+          await processOfflineQueue();
+          await refreshOfflineCount();
+        } catch (queueErr) {
+          console.warn('Replaying offline queue before reload failed:', queueErr);
+        }
+
         // Fetch authoritative data directly from Supabase
+        const targetHouseholdId = household?.id;
         const [cloudItems, cloudBoxes] = await Promise.all([
-          fetchItemsFromSupabase(),
-          fetchBoxesFromSupabase(),
+          fetchItemsFromSupabase(targetHouseholdId),
+          fetchBoxesFromSupabase(targetHouseholdId),
         ]);
 
         if (cloudItems !== null) {
@@ -163,13 +175,29 @@ export const ItemProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setBoxes((prev) => prev.filter((b) => b.id !== deletedId));
           dbDeleteBox(deletedId);
         }
-      }
+      },
+      household?.id
     );
 
     return () => {
       unsubscribe();
     };
-  }, []);
+  }, [household?.id, isOnline]);
+
+  useEffect(() => {
+    const handleOnlineFlush = async () => {
+      try {
+        await processOfflineQueue();
+        await refreshOfflineCount();
+        await reloadAll();
+      } catch (e) {
+        console.warn('Online sync flush failed:', e);
+      }
+    };
+
+    window.addEventListener('online', handleOnlineFlush);
+    return () => window.removeEventListener('online', handleOnlineFlush);
+  }, [household?.id]);
 
   const setFilter = <K extends keyof FilterOptions>(key: K, value: FilterOptions[K]) => {
     setFilters((prev) => ({ ...prev, [key]: value }));
@@ -186,6 +214,7 @@ export const ItemProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const id = `item-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
     const now = new Date().toISOString();
     const cbm = itemData.cbm || calculateCbm(itemData.dimensions_cm);
+    const cleanedBoxId = isMovingDecision(itemData.decision_status) ? itemData.box_id || null : null;
 
     let photoUrl = itemData.photo_url;
     if (photoUrl && photoUrl.startsWith('data:image/')) {
@@ -198,6 +227,8 @@ export const ItemProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const newItem: Item = {
       ...itemData,
       id,
+      household_id: itemData.household_id || household?.id || 'household-bukit-batok-4rm',
+      box_id: cleanedBoxId,
       photo_url: photoUrl,
       cbm,
       created_at: now,
@@ -226,6 +257,7 @@ export const ItemProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Update Item
   const updateItem = async (updated: Item) => {
     const cbm = calculateCbm(updated.dimensions_cm);
+    const cleanedBoxId = isMovingDecision(updated.decision_status) ? updated.box_id || null : null;
     let photoUrl = updated.photo_url;
     if (photoUrl && photoUrl.startsWith('data:image/')) {
       const cloudUrl = await uploadBase64PhotoToSupabase(photoUrl, updated.id);
@@ -234,8 +266,10 @@ export const ItemProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     }
 
-    const itemToSave = {
+    const itemToSave: Item = {
       ...updated,
+      household_id: updated.household_id || household?.id || 'household-bukit-batok-4rm',
+      box_id: cleanedBoxId,
       photo_url: photoUrl,
       cbm,
       updated_at: new Date().toISOString(),
@@ -258,6 +292,13 @@ export const ItemProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Remove Item
   const removeItem = async (id: string) => {
+    const itemToDelete = items.find((i) => i.id === id);
+    if (itemToDelete?.photo_url && itemToDelete.photo_url.includes('/movetrack-photos/')) {
+      deletePhotoFromSupabase(itemToDelete.photo_url).catch((err) =>
+        console.warn('Failed to delete photo from storage:', err)
+      );
+    }
+
     setItems((prev) => prev.filter((i) => i.id !== id));
     await dbDeleteItem(id);
 
@@ -274,6 +315,7 @@ export const ItemProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const id = `box-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
     const newBox: Box = {
       ...boxData,
+      household_id: boxData.household_id || household?.id || 'household-bukit-batok-4rm',
       id,
       created_at: new Date().toISOString(),
     };
@@ -318,6 +360,19 @@ export const ItemProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const removeBox = async (id: string) => {
     setBoxes((prev) => prev.filter((b) => b.id !== id));
     setItems((prev) => prev.map((i) => (i.box_id === id ? { ...i, box_id: null } : i)));
+
+    // Unassign affected items from local DB & queue/cloud
+    const affected = items.filter((i) => i.box_id === id);
+    for (const it of affected) {
+      const unassigned = { ...it, box_id: null, updated_at: new Date().toISOString() };
+      await dbSaveItem(unassigned);
+      if (isOnline) {
+        saveItemToSupabase(unassigned).catch(() => {});
+      } else {
+        await enqueueOfflineAction('update', 'items', unassigned);
+      }
+    }
+
     await dbDeleteBox(id);
 
     if (isOnline) {
@@ -332,7 +387,7 @@ export const ItemProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const resetAllData = async () => {
     await purgeAllData();
     if (isOnline) {
-      await purgeAllFromSupabase();
+      await purgeAllFromSupabase(household?.id);
     }
     setItems([]);
     setBoxes([]);
@@ -340,7 +395,7 @@ export const ItemProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Filtered items computation
   const filteredItems = useMemo(() => {
-    return items.filter((item) => {
+    const filtered = items.filter((item) => {
       // Search query
       if (filters.searchQuery.trim()) {
         const query = filters.searchQuery.toLowerCase();
@@ -393,6 +448,29 @@ export const ItemProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       return true;
+    });
+
+    const sortBy = filters.sortBy || 'date_desc';
+    return [...filtered].sort((a, b) => {
+      switch (sortBy) {
+        case 'date_desc':
+          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+        case 'date_asc':
+          return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+        case 'name_asc':
+          return a.name.localeCompare(b.name);
+        case 'weight_desc':
+          return (Number(b.weight_kg) || 0) - (Number(a.weight_kg) || 0);
+        case 'cbm_desc':
+          return (Number(b.cbm) || 0) - (Number(a.cbm) || 0);
+        case 'price_desc':
+          return (
+            (Number(b.carousell_details?.asking_price) || 0) -
+            (Number(a.carousell_details?.asking_price) || 0)
+          );
+        default:
+          return 0;
+      }
     });
   }, [items, filters]);
 

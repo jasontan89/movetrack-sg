@@ -84,6 +84,22 @@ export async function initializeDatabase(): Promise<void> {
       if (existingHousehold.length === 0) {
         await db.put('household', INITIAL_HOUSEHOLD);
       }
+      const existingBoxes = await db.count('boxes');
+      if (existingBoxes === 0 && INITIAL_BOXES.length > 0) {
+        const tx = db.transaction('boxes', 'readwrite');
+        for (const box of INITIAL_BOXES) {
+          await tx.objectStore('boxes').put(box);
+        }
+        await tx.done;
+      }
+      const existingItems = await db.count('items');
+      if (existingItems === 0 && INITIAL_ITEMS.length > 0) {
+        const tx = db.transaction('items', 'readwrite');
+        for (const item of INITIAL_ITEMS) {
+          await tx.objectStore('items').put(item);
+        }
+        await tx.done;
+      }
       isInitialized = true;
     })();
   }
@@ -163,6 +179,27 @@ export async function enqueueOfflineAction(action: 'insert' | 'update' | 'delete
 export async function getOfflineQueueCount(): Promise<number> {
   const db = await getDb();
   return db.count('offline_queue');
+}
+
+export async function getOfflineQueueEntries(): Promise<
+  { key: number; value: { action: 'insert' | 'update' | 'delete'; table: 'items' | 'boxes'; data: any; timestamp: string } }[]
+> {
+  const db = await getDb();
+  const tx = db.transaction('offline_queue', 'readonly');
+  const store = tx.objectStore('offline_queue');
+  const entries: { key: number; value: any }[] = [];
+  let cursor = await store.openCursor();
+  while (cursor) {
+    entries.push({ key: cursor.key as number, value: cursor.value });
+    cursor = await cursor.continue();
+  }
+  await tx.done;
+  return entries;
+}
+
+export async function removeOfflineQueueEntry(key: number): Promise<void> {
+  const db = await getDb();
+  await db.delete('offline_queue', key);
 }
 
 export async function clearOfflineQueue(): Promise<void> {

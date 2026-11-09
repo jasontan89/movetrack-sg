@@ -27,22 +27,33 @@ const AppContent: React.FC = () => {
   const [currentTab, setCurrentTab] = useState<NavTab>('items');
   const [bypassAuth, setBypassAuth] = useState<boolean>(false);
 
-  // Modals state
+  // Modals state by ID to prevent stale state snapshots
   const [showAddModal, setShowAddModal] = useState<boolean>(false);
-  const [selectedItem, setSelectedItem] = useState<Item | null>(null);
-  const [editingItem, setEditingItem] = useState<Item | null>(null);
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
 
-  const [selectedBox, setSelectedBox] = useState<Box | null>(null);
+  const [selectedBoxId, setSelectedBoxId] = useState<string | null>(null);
+  const [printingBox, setPrintingBox] = useState<Box | null>(null);
   const [showScanner, setShowScanner] = useState<boolean>(false);
   const [showPrintSheet, setShowPrintSheet] = useState<boolean>(false);
 
   const [showInviteModal, setShowInviteModal] = useState<boolean>(false);
   const [showSettings, setShowSettings] = useState<boolean>(false);
 
+  // Derived current models
+  const selectedItem = items.find((i) => i.id === selectedItemId) || null;
+  const editingItem = items.find((i) => i.id === editingItemId) || null;
+  const selectedBox = boxes.find((b) => b.id === selectedBoxId) || null;
+
+  // Security gate checks
+  const isAuthLocked = isCloudConfigured && !session && !bypassAuth;
+  const isPinLocked = (!isCloudConfigured || session || bypassAuth) && !isPinUnlocked;
+  const isLocked = isAuthLocked || isPinLocked;
+
   // When an item is selected from inside a box modal
   const handleSelectItemFromBox = (item: Item) => {
-    setSelectedBox(null);
-    setSelectedItem(item);
+    setSelectedBoxId(null);
+    setSelectedItemId(item.id);
   };
 
   return (
@@ -57,44 +68,51 @@ const AppContent: React.FC = () => {
       {/* 2. Offline / Bomb Shelter banner */}
       <OfflineBanner />
 
-      {/* 3. Main Body */}
-      <main className="flex-1 max-w-4xl w-full mx-auto p-3.5 sm:p-4">
-        {currentTab === 'items' && (
-          <ItemList
-            onSelectItem={(item) => setSelectedItem(item)}
+      {/* 3. Main Body - Gated when locked */}
+      {!isLocked && (
+        <>
+          <main className="flex-1 max-w-4xl w-full mx-auto p-3.5 sm:p-4">
+            {currentTab === 'items' && (
+              <ItemList
+                onSelectItem={(item) => setSelectedItemId(item.id)}
+                onOpenAddModal={() => setShowAddModal(true)}
+              />
+            )}
+
+            {currentTab === 'boxes' && (
+              <BoxList
+                onSelectBox={(box) => setSelectedBoxId(box.id)}
+                onOpenScanner={() => setShowScanner(true)}
+                onOpenPrintSheet={() => {
+                  setPrintingBox(null);
+                  setShowPrintSheet(true);
+                }}
+              />
+            )}
+
+            {currentTab === 'decisions' && (
+              <DecisionMatrix onSelectItem={(item) => setSelectedItemId(item.id)} />
+            )}
+
+            {currentTab === 'logistics' && <RelocationHub />}
+          </main>
+
+          {/* 4. Bottom Navigation Bar */}
+          <BottomNav
+            currentTab={currentTab}
+            onTabChange={(tab) => setCurrentTab(tab)}
             onOpenAddModal={() => setShowAddModal(true)}
+            itemsCount={items.length}
+            boxesCount={boxes.length}
           />
-        )}
-
-        {currentTab === 'boxes' && (
-          <BoxList
-            onSelectBox={(box) => setSelectedBox(box)}
-            onOpenScanner={() => setShowScanner(true)}
-            onOpenPrintSheet={() => setShowPrintSheet(true)}
-          />
-        )}
-
-        {currentTab === 'decisions' && (
-          <DecisionMatrix onSelectItem={(item) => setSelectedItem(item)} />
-        )}
-
-        {currentTab === 'logistics' && <RelocationHub />}
-      </main>
-
-      {/* 4. Bottom Navigation Bar */}
-      <BottomNav
-        currentTab={currentTab}
-        onTabChange={(tab) => setCurrentTab(tab)}
-        onOpenAddModal={() => setShowAddModal(true)}
-        itemsCount={items.length}
-        boxesCount={boxes.length}
-      />
+        </>
+      )}
 
       {/* 5. Modals & Sheets */}
       {showAddModal && (
         <ItemFormModal
           onClose={() => setShowAddModal(false)}
-          onSaved={(newItem) => setSelectedItem(newItem)}
+          onSaved={(newItem) => setSelectedItemId(newItem.id)}
         />
       )}
 
@@ -102,10 +120,10 @@ const AppContent: React.FC = () => {
         <ItemDetailModal
           item={selectedItem}
           boxes={boxes}
-          onClose={() => setSelectedItem(null)}
+          onClose={() => setSelectedItemId(null)}
           onEdit={() => {
-            setEditingItem(selectedItem);
-            setSelectedItem(null);
+            setEditingItemId(selectedItem.id);
+            setSelectedItemId(null);
           }}
         />
       )}
@@ -113,16 +131,20 @@ const AppContent: React.FC = () => {
       {editingItem && (
         <ItemFormModal
           initialItem={editingItem}
-          onClose={() => setEditingItem(null)}
-          onSaved={(updated) => setSelectedItem(updated)}
+          onClose={() => setEditingItemId(null)}
+          onSaved={(updated) => setSelectedItemId(updated.id)}
         />
       )}
 
       {selectedBox && (
         <BoxDetailModal
           box={selectedBox}
-          onClose={() => setSelectedBox(null)}
+          onClose={() => setSelectedBoxId(null)}
           onSelectItem={handleSelectItemFromBox}
+          onPrint={(b) => {
+            setPrintingBox(b);
+            setShowPrintSheet(true);
+          }}
         />
       )}
 
@@ -132,16 +154,20 @@ const AppContent: React.FC = () => {
           onClose={() => setShowScanner(false)}
           onBoxFound={(foundBox) => {
             setShowScanner(false);
-            setSelectedBox(foundBox);
+            setSelectedBoxId(foundBox.id);
           }}
         />
       )}
 
       {showPrintSheet && (
         <BoxPrintSheet
-          boxes={boxes}
+          boxes={printingBox ? [printingBox] : boxes}
           items={items}
-          onClose={() => setShowPrintSheet(false)}
+          householdName={household?.name}
+          onClose={() => {
+            setShowPrintSheet(false);
+            setPrintingBox(null);
+          }}
         />
       )}
 
@@ -154,11 +180,11 @@ const AppContent: React.FC = () => {
       )}
 
       {/* 6. Security Gates: Supabase Auth Modal & Household PIN Gate */}
-      {isCloudConfigured && !session && !bypassAuth && (
+      {isAuthLocked && (
         <AuthModal onBypass={() => setBypassAuth(true)} />
       )}
 
-      {(!isCloudConfigured || session || bypassAuth) && !isPinUnlocked && (
+      {isPinLocked && (
         <HouseholdPinModal
           correctPin={household?.security_pin || '884488'}
           onSuccess={unlockPin}

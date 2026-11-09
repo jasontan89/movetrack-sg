@@ -110,7 +110,7 @@ export const Header: React.FC<HeaderProps> = ({
               </span>
 
               {offlineQueueCount > 0 && (
-                <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-500 text-white font-bold">
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500 text-white font-bold">
                   {offlineQueueCount} queued
                 </span>
               )}

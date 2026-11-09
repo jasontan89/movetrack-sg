@@ -1,7 +1,7 @@
 import React from 'react';
 import { useItems } from '../../context/ItemContext';
 import { JURONG_CLEMENTI_BULKY_RULES } from '../../utils/singaporeHelpers';
-import { Trash2, ExternalLink, Phone, CheckCircle, AlertCircle } from 'lucide-react';
+import { Trash2, ExternalLink, Phone, AlertCircle } from 'lucide-react';
 
 export const TownCouncilBulky: React.FC = () => {
   const { items } = useItems();

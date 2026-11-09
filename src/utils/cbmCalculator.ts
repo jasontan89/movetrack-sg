@@ -1,4 +1,4 @@
-import { Dimensions, Item, LorryRecommendation } from '../types';
+import { Dimensions, isMovingDecision, Item, Box, LorryRecommendation } from '../types';
 
 export function calculateCbm(dims: Dimensions): number {
   if (!dims || dims.length <= 0 || dims.width <= 0 || dims.height <= 0) return 0;
@@ -7,16 +7,49 @@ export function calculateCbm(dims: Dimensions): number {
   return Math.round(rawCbm * 1000) / 1000;
 }
 
-export function calculateTotalLogistics(items: Item[]) {
-  // Only count items that are being kept/moved
-  const movingItems = items.filter((item) => item.decision_status === 'keep_pack');
+export function calculateTotalLogistics(items: Item[], boxes: Box[] = []) {
+  // Count items moving to either Condo ('keep_pack') or HQ ('move_hq')
+  const movingItems = items.filter((item) => isMovingDecision(item.decision_status));
+  const condoItems = items.filter((item) => item.decision_status === 'keep_pack');
+  const hqItems = items.filter((item) => item.decision_status === 'move_hq');
+  const discussItems = items.filter((item) => item.decision_status === 'undecided_discuss');
 
-  const totalCbm = movingItems.reduce((acc, item) => {
+  let totalCbm = movingItems.reduce((acc, item) => {
     const itemCbm = item.cbm || calculateCbm(item.dimensions_cm);
     return acc + itemCbm;
   }, 0);
 
+  const condoCbm = condoItems.reduce(
+    (acc, item) => acc + (item.cbm || calculateCbm(item.dimensions_cm)),
+    0
+  );
+  const hqCbm = hqItems.reduce(
+    (acc, item) => acc + (item.cbm || calculateCbm(item.dimensions_cm)),
+    0
+  );
+  const discussCbm = discussItems.reduce(
+    (acc, item) => acc + (item.cbm || calculateCbm(item.dimensions_cm)),
+    0
+  );
+
+  // Minimum standard box volume for packed boxes where items may lack dimensions (~50x40x30cm = 0.06 CBM)
+  const STANDARD_BOX_CBM = 0.06;
+  for (const box of boxes) {
+    const boxItems = movingItems.filter((i) => i.box_id === box.id);
+    if (boxItems.length > 0) {
+      const measuredCbm = boxItems.reduce(
+        (sum, i) => sum + (i.cbm || calculateCbm(i.dimensions_cm)),
+        0
+      );
+      if (measuredCbm < STANDARD_BOX_CBM) {
+        totalCbm += (STANDARD_BOX_CBM - measuredCbm);
+      }
+    }
+  }
+
   const totalWeightKg = movingItems.reduce((acc, item) => acc + (Number(item.weight_kg) || 0), 0);
+  const condoWeightKg = condoItems.reduce((acc, item) => acc + (Number(item.weight_kg) || 0), 0);
+  const hqWeightKg = hqItems.reduce((acc, item) => acc + (Number(item.weight_kg) || 0), 0);
   const fragileCount = movingItems.filter((i) => i.is_fragile).length;
   const disassemblyCount = movingItems.filter((i) => i.disassembly_required).length;
   const originalBoxCount = movingItems.filter((i) => i.has_original_box).length;
@@ -25,6 +58,14 @@ export function calculateTotalLogistics(items: Item[]) {
     movingCount: movingItems.length,
     totalCbm: Math.round(totalCbm * 100) / 100,
     totalWeightKg: Math.round(totalWeightKg * 10) / 10,
+    condoCount: condoItems.length,
+    condoCbm: Math.round(condoCbm * 100) / 100,
+    condoWeightKg: Math.round(condoWeightKg * 10) / 10,
+    hqCount: hqItems.length,
+    hqCbm: Math.round(hqCbm * 100) / 100,
+    hqWeightKg: Math.round(hqWeightKg * 10) / 10,
+    discussCount: discussItems.length,
+    discussCbm: Math.round(discussCbm * 100) / 100,
     fragileCount,
     disassemblyCount,
     originalBoxCount,

@@ -15,8 +15,54 @@ export const BoxQrScannerModal: React.FC<BoxQrScannerModalProps> = ({
   onBoxFound,
 }) => {
   const [scanError, setScanError] = useState<string>('');
-  const [isScanning, setIsScanning] = useState<boolean>(true);
   const scannerRef = useRef<Html5Qrcode | null>(null);
+  const hasMatchedRef = useRef(false);
+
+  const handleDecodedQr = React.useCallback((decodedText: string) => {
+    if (hasMatchedRef.current) return;
+    const trimmed = decodedText.trim();
+
+    try {
+      let matchedBox: Box | undefined;
+      // 1. Try structured JSON QR payload
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (parsed.box_id) {
+          matchedBox = boxes.find((b) => b.id === parsed.box_id);
+        } else if (parsed.box_number) {
+          matchedBox = boxes.find((b) => b.box_number === Number(parsed.box_number));
+        }
+      } catch {
+        // 2. Exact match against Box ID or qr_code_id
+        matchedBox = boxes.find(
+          (b) =>
+            b.id === trimmed ||
+            b.qr_code_id.toLowerCase() === trimmed.toLowerCase()
+        );
+
+        // 3. Exact regex extraction for patterns like "BOX-05", "#5", "Box 5"
+        if (!matchedBox) {
+          const numMatch = trimmed.match(/(?:box[-_\s]*|#\s*)(\d+)/i);
+          if (numMatch) {
+            const scannedNum = parseInt(numMatch[1], 10);
+            matchedBox = boxes.find((b) => b.box_number === scannedNum);
+          }
+        }
+      }
+
+      if (matchedBox) {
+        hasMatchedRef.current = true;
+        if (scannerRef.current && scannerRef.current.isScanning) {
+          scannerRef.current.stop().catch(() => {});
+        }
+        onBoxFound(matchedBox);
+      } else {
+        setScanError(`Scanned code "${trimmed}", but no matching box was found in this household.`);
+      }
+    } catch (e) {
+      console.error('QR decode error:', e);
+    }
+  }, [boxes, onBoxFound]);
 
   useEffect(() => {
     const scannerId = 'qr-reader-viewport';
@@ -36,14 +82,13 @@ export const BoxQrScannerModal: React.FC<BoxQrScannerModalProps> = ({
             // Handle detected QR
             handleDecodedQr(decodedText);
           },
-          (errorMessage) => {
+          () => {
             // Frame parse error (ignore routine non-matches)
           }
         );
       } catch (err: any) {
         console.error('Camera QR start error:', err);
         setScanError('Unable to access mobile camera. Please ensure camera permissions are granted.');
-        setIsScanning(false);
       }
     };
 
@@ -54,41 +99,7 @@ export const BoxQrScannerModal: React.FC<BoxQrScannerModalProps> = ({
         scannerRef.current.stop().catch((e) => console.warn('Error stopping scanner:', e));
       }
     };
-  }, []);
-
-  const handleDecodedQr = (decodedText: string) => {
-    try {
-      // Try JSON parsing first
-      let matchedBox: Box | undefined;
-      try {
-        const parsed = JSON.parse(decodedText);
-        if (parsed.box_id) {
-          matchedBox = boxes.find((b) => b.id === parsed.box_id);
-        } else if (parsed.box_number) {
-          matchedBox = boxes.find((b) => b.box_number === Number(parsed.box_number));
-        }
-      } catch {
-        // Raw text search e.g. MOVETRACK-BB-BOX-01 or Box #1
-        matchedBox = boxes.find(
-          (b) =>
-            b.qr_code_id === decodedText.trim() ||
-            decodedText.includes(String(b.box_number)) ||
-            decodedText.includes(b.id)
-        );
-      }
-
-      if (matchedBox) {
-        if (scannerRef.current && scannerRef.current.isScanning) {
-          scannerRef.current.stop().catch(() => {});
-        }
-        onBoxFound(matchedBox);
-      } else {
-        setScanError(`Scanned code "${decodedText}", but no matching box was found in this household.`);
-      }
-    } catch (e) {
-      console.error('QR decode error:', e);
-    }
-  };
+  }, [handleDecodedQr]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
